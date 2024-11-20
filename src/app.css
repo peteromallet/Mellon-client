@@ -1,0 +1,94 @@
+:root {
+  --category-default: 59, 63, 70;
+  --category-image: 21, 95, 160;
+  --category-utility: 139, 195, 74;
+}
+
+.react-flow__handle {
+  background-color: rgb(100, 100, 100);
+  width: 12px;
+  height: 9px;
+  border-radius: 1px;
+  outline: 4px solid #121212;
+}
+
+.react-flow__handle-left {
+  left: -9px;
+}
+
+.react-flow__handle-right {
+  right: -9px;
+}
+
+.customNumberInput {
+  background: rgba(255,255,255,0.1);
+}
+
+.customNumberInput:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+/*
+ * Category Colors
+ * ----------------------------------------------------------------------------
+ */
+
+/* Left sidebar */
+
+.left-sidebar .category-default {
+  border-color: rgb(var(--category-default));
+}
+
+.left-sidebar .category-image {
+  border-color: rgb(var(--category-image));
+}
+
+.left-sidebar .category-utility {
+  border-color: rgb(var(--category-utility));
+}
+
+/* Node header */
+
+.react-flow__node-custom .category-default header {
+  border-color: rgb(var(--category-default));
+}
+
+.react-flow__node-custom .category-image header {
+  border-color: rgb(var(--category-image));
+}
+
+.react-flow__node-custom .category-utility header {
+  border-color: rgb(var(--category-utility));
+}
+
+/* Node selection */
+
+.react-flow__node-custom.selected .category-default {
+  outline: 2px solid rgba(var(--category-default), 0.66);
+}
+
+.react-flow__node-custom.selected .category-image {
+  outline: 2px solid rgba(var(--category-image), 0.66);
+}
+
+.react-flow__node-custom.selected .category-utility {
+  outline: 2px solid rgba(var(--category-utility), 0.66);
+}
+
+/* Node handles */
+
+.react-flow__node-custom .default-handle {
+  background-color: rgb(var(--category-default));
+}
+
+.react-flow__node-custom .image-handle {
+  background-color: rgb(var(--category-image));
+}
+
+.react-flow__node-custom .utility-handle {
+  background-color: rgb(var(--category-utility));
+}
+
+.react-flow__handle.valid {
+  background: #10b60d;
+}
