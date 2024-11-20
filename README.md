@@ -1,6 +1,6 @@
 # Mellon Client
 
-This is the development client for the Mellon workflow engine. It is built with [ReactFlow](https://reactflow.dev/), [Typescript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) and [MUI](https://mui.com/).
+This is the development client for the [Mellon](https://github.com/cubiq/Mellon) workflow engine. It is built with [ReactFlow](https://reactflow.dev/), [Typescript](https://www.typescriptlang.org/), [Vite](https://vitejs.dev/) and [MUI](https://mui.com/).
 
 > [!CAUTION]
 > This is mostly a proof of concept and not a production ready application. **DO NOT USE** unless you know what you are doing. Things will change often.
