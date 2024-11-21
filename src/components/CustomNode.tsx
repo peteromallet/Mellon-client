@@ -34,14 +34,16 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
 
     const style = props.style || {};
 
-    if (!fieldType && props.options && typeof props.options === 'object') {
-        fieldType = 'select';
-    } else if (dataType === 'boolean') {
-        fieldType = fieldType !== 'checkbox' ? 'switch' : fieldType;
-    } else if (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number') {
-        fieldType = props.display === 'slider' ? 'slider' : 'number';
-    } else if (!fieldType) {
-        fieldType = 'text';
+    if ( fieldType !== 'input' && fieldType !== 'output') {
+        if (!fieldType && props.options && typeof props.options === 'object') {
+            fieldType = 'select';
+        } else if (dataType === 'boolean') {
+            fieldType = fieldType !== 'checkbox' ? 'switch' : fieldType;
+        } else if (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number') {
+            fieldType = props.display === 'slider' ? 'slider' : 'number';
+        } else if (!fieldType) {
+            fieldType = 'text';
+        }
     }
 
     switch (fieldType) {
