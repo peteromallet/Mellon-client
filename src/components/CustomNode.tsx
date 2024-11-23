@@ -75,7 +75,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         case 'textarea':
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, ...style }}>
+                <Box key={key} sx={{ pt: 1, pb: 1, minWidth: '320px', ...style }}>
                     <TextField
                         onChange={(e) => onValueChange(nodeId, key, e.target.value)}
                         variant="outlined"
@@ -87,7 +87,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         label={props.label || key}
                         value={props.value || props.default || ''}
                         sx={{ '& textarea': { fontSize: '13px' } }}
-                        className="nowheel"
+                        className="nodrag"
                     />
                 </Box>
             );
