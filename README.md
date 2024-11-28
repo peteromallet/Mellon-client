@@ -13,6 +13,12 @@ cd Mellon-client
 npm install
 ```
 
+Then create a `.env.development` file and put the server address in it, like so (change the address/port if needed):
+
+```
+VITE_SERVER_ADDRESS=127.0.0.1:8080
+```
+
 Then you can start the development server with:
 
 ```bash

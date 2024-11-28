@@ -29,7 +29,7 @@ type NodeParams = {
     min?: number;
     max?: number;
     step?: number;
-    group?: string;
+    group?: string | { [key: string]: string };
     style?: { [key: string]: string };
 };
 

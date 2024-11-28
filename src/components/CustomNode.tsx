@@ -1,18 +1,44 @@
 import Box from '@mui/material/Box';
 import { Handle, NodeProps, Position } from '@xyflow/react';
-import { useTheme } from '@mui/material/styles'
+import { styled, useTheme } from '@mui/material/styles'
 import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
-import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel/FormControlLabel';
 import FormGroup from '@mui/material/FormGroup';
 import CustomNumberInput from './CustomNumberInput';
-import AccessAlarmIcon from '@mui/icons-material/AccessAlarm';
 import config from '../../config';
 import { useNodeState, NodeState, CustomNodeType } from '../stores/nodeStore';
 import { shallow } from 'zustand/shallow';
 import Stack from '@mui/material/Stack';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+//import TextareaAutosize from '@mui/material/TextareaAutosize';
+
+// Icons
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import AccessAlarmIcon from '@mui/icons-material/AccessAlarm';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+
+const PlainAccordion = styled(Accordion)(({ theme }) => ({
+    boxShadow: 'none',
+    border: 0,
+    padding: '0px 0px 8px 0px',
+    margin: 0,
+    background: 'transparent',
+    '&:before': { background: 'transparent' },
+    '.MuiAccordionHeading:hover': { color: theme.palette.text.secondary },
+    '.MuiAccordionSummary-root': { border: 0, padding: '0px 8px', margin: '0px 0px 0px 0px', background: 'rgba(255, 255, 255, 0.05)' },
+    '.MuiAccordionDetails-root': { border: 0, padding: 0, margin: 0 },
+    '.MuiAccordionSummary-root:hover, .MuiAccordionSummary-root:hover .MuiAccordionSummary-expandIconWrapper': { color: theme.palette.secondary.light },
+}));
+
+
+// const CustomTextarea = styled(TextareaAutosize)(() => ({
+//     fontSize: '13px',
+//     padding: '4px',
+// }));
 
 const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void) => {
     let field;
@@ -23,6 +49,20 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             <Stack direction="row" spacing={1} key={key}>
                 {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
             </Stack>
+        )
+        return field;
+    }
+
+    if (fieldType === 'collapse') {
+        field = (
+            <PlainAccordion key={key} disableGutters={true} square={true}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ border: 'none' }}>
+                    {props.label || key}
+                </AccordionSummary>
+                <AccordionDetails sx={{ border: 'none' }}>
+                    {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
+                </AccordionDetails>
+            </PlainAccordion>
         )
         return field;
     }
@@ -87,7 +127,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         label={props.label || key}
                         value={props.value || props.default || ''}
                         sx={{ '& textarea': { fontSize: '13px' } }}
-                        className="nodrag"
+                        className="nodrag nowheel"
                     />
                 </Box>
             );
@@ -215,22 +255,32 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
         }
     }
 
-    // Group fields by data.params.group.
-    // From:
+    // Group fields by data.params.group. Convert group from:
     // 'seed': { ... }, 'width': { ... group: 'dimensions' }, 'height': { ... group: 'dimensions' }
     // To:
-    // 'seed': { ... }, 'dimensions_1234': { ... , 'params': { 'width': { ... }, 'height': { ... } } }
+    // 'seed': { ... }, 'dimensions_group': { ... , 'params': { 'width': { ... }, 'height': { ... } } }
     // This complication is done to keep all fields on the same level and avoid nested objects
     const groupedParams = Object.entries(props.data.params).reduce((acc: any, [key, data]) => {
-        const group = data.group ? data.group + '_group' : undefined;
+        let group = undefined;
+
+        if (data.group) {
+            if (typeof data.group === 'string') {
+                group = {
+                    key: data.group + '_group',
+                    display: 'group'
+                }
+            } else {
+                group = data.group;
+            }
+        }
 
         if (!group) {
             acc[key] = data;
         } else {
-            if (!acc[group]) {
-                acc[group] = { display: 'group', params: {} };
+            if (!acc[group.key]) {
+                acc[group.key] = { display: group.display || 'group', label: group.label || null, params: {} };
             }
-            acc[group].params[key] = data;
+            acc[group.key].params[key] = data;
         }
 
         return acc;

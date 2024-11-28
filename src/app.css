@@ -2,8 +2,8 @@
   --category-default: 59, 63, 70;
   --category-image: 21, 95, 160;
   --category-utility: 139, 195, 74;
-  --category-clip: 240, 190, 10;
-  --category-t5: 228, 168, 15;
+  --category-text-encoder: 228, 168, 15;
+  --category-vae: 109, 29, 163;
 }
 
 .react-flow__handle {
@@ -45,16 +45,18 @@
   border-color: rgb(var(--category-image));
 }
 
+.left-sidebar .category-text-encoders,
+.left-sidebar .category-t5,
 .left-sidebar .category-clip {
-  border-color: rgb(var(--category-clip));
-}
-
-.left-sidebar .category-t5 {
-  border-color: rgb(var(--category-t5));
+  border-color: rgb(var(--category-text-encoder));
 }
 
 .left-sidebar .category-utility {
   border-color: rgb(var(--category-utility));
+}
+
+.left-sidebar .category-vae {
+  border-color: rgb(var(--category-vae));
 }
 
 /* Node header */
@@ -67,16 +69,18 @@
   border-color: rgb(var(--category-image));
 }
 
+.react-flow__node-custom .category-text-encoders header,
+.react-flow__node-custom .category-t5 header,
 .react-flow__node-custom .category-clip header {
-  border-color: rgb(var(--category-clip));
-}
-
-.react-flow__node-custom .category-t5 header {
-  border-color: rgb(var(--category-t5));
+  border-color: rgb(var(--category-text-encoder));
 }
 
 .react-flow__node-custom .category-utility header {
   border-color: rgb(var(--category-utility));
+}
+
+.react-flow__node-custom .category-vae header {
+  border-color: rgb(var(--category-vae));
 }
 
 /* Node selection */
@@ -89,16 +93,18 @@
   outline: 2px solid rgba(var(--category-image), 0.66);
 }
 
+.react-flow__node-custom.selected .category-text-encoders,
+.react-flow__node-custom.selected .category-t5,
 .react-flow__node-custom.selected .category-clip {
-  outline: 2px solid rgba(var(--category-clip), 0.66);
-}
-
-.react-flow__node-custom.selected .category-t5 {
-  outline: 2px solid rgba(var(--category-t5), 0.66);
+  outline: 2px solid rgba(var(--category-text-encoder), 0.66);
 }
 
 .react-flow__node-custom.selected .category-utility {
   outline: 2px solid rgba(var(--category-utility), 0.66);
+}
+
+.react-flow__node-custom.selected .category-vae {
+  outline: 2px solid rgba(var(--category-vae), 0.66);
 }
 
 /* Node handles */
@@ -111,17 +117,18 @@
   background-color: rgb(var(--category-image));
 }
 
-
+.react-flow__node-custom .SD3TextEncoders-handle,
+.react-flow__node-custom .T5Encoders-handle,
 .react-flow__node-custom .CLIPTextEncoders-handle {
-  background-color: rgb(var(--category-clip));
-}
-
-.react-flow__node-custom .T5Encoders-handle {
-  background-color: rgb(var(--category-t5));
+  background-color: rgb(var(--category-text-encoder));
 }
 
 .react-flow__node-custom .utility-handle {
   background-color: rgb(var(--category-utility));
+}
+
+.react-flow__node-custom .vae-handle {
+  background-color: rgb(var(--category-vae));
 }
 
 .react-flow__handle.valid {

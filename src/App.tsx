@@ -96,7 +96,7 @@ export default function App() {
     let sourceType = getParam(connection.source, connection.sourceHandle, 'type');
     let targetType = getParam(connection.target, connection.targetHandle, 'type');
     sourceType = Array.isArray(sourceType) ? sourceType : [sourceType];
-    sourceType.push('*');
+    sourceType.push('any');
     targetType = Array.isArray(targetType) ? targetType : [targetType];
 
     if (!sourceType.some((type: string) => targetType.includes(type))) return false;
