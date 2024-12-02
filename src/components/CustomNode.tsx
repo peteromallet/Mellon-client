@@ -1,6 +1,7 @@
-import Box from '@mui/material/Box';
+import { useState, MouseEvent } from 'react';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { styled, useTheme } from '@mui/material/styles'
+import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
 import Switch from '@mui/material/Switch';
@@ -15,11 +16,16 @@ import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
 //import TextareaAutosize from '@mui/material/TextareaAutosize';
+import MenuItem from '@mui/material/MenuItem';
+import Menu from '@mui/material/Menu';
+import IconButton from '@mui/material/IconButton';
 
 // Icons
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import AccessAlarmIcon from '@mui/icons-material/AccessAlarm';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import Autocomplete from '@mui/material/Autocomplete';
 
 const PlainAccordion = styled(Accordion)(({ theme }) => ({
     boxShadow: 'none',
@@ -43,10 +49,11 @@ const PlainAccordion = styled(Accordion)(({ theme }) => ({
 const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void) => {
     let field;
     let fieldType = props.display || '';
+    const theme = useTheme();
 
     if (fieldType === 'group') {
         field = (
-            <Stack direction="row" spacing={1} key={key}>
+            <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "center" }}>
                 {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
             </Stack>
         )
@@ -67,8 +74,8 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
         return field;
     }
 
-    // Data type can be an array, the array is mostly used for input handles to allow multiple types in
-    // For processing the node we only use the first type, that is the main type
+    // Data type can be an array, the array is mostly used for input handles to allow multiple types
+    // For node processing we only use the first type, that is the main type
     // TODO: should we use an "allowedTypes" property instead?
     const dataType = Array.isArray(props.type) && props.type.length > 0 ? props.type[0] : props.type;
 
@@ -79,8 +86,14 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             fieldType = 'select';
         } else if (dataType === 'boolean') {
             fieldType = fieldType !== 'checkbox' ? 'switch' : fieldType;
-        } else if (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number') {
+        } else if (!fieldType && (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number')) {
             fieldType = props.display === 'slider' ? 'slider' : 'number';
+        } else if (fieldType === 'ui') {
+            if (dataType === 'image') {
+                fieldType = 'ui_image';
+            } else if (dataType.toLowerCase() === 'dropdownicon') {
+                fieldType = 'ui_dropdownicon';
+            }
         } else if (!fieldType) {
             fieldType = 'text';
         }
@@ -170,6 +183,21 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 </Box>
             );
             break;
+        case 'autocomplete':
+            field = (
+                <Box key={key} sx={{ pt: 1, pb: 1, ...style }} className="nodrag nowheel">
+                    <Autocomplete
+                        disablePortal
+                        freeSolo
+                        options={props.options || []}
+                        renderInput={(params: any) => <TextField {...params} label={props.label || key} />}
+                        onChange={(_, value) => onValueChange(nodeId, key, value)}
+                        value={props.value || props.default || ''}
+                        size="small"
+                    />
+                </Box>
+            );
+            break;
         case 'switch':
             field = (
                 <Box key={key} sx={{ ml: '-8px', ...style }}>
@@ -187,34 +215,92 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 </Box>
             );
             break;
-        case 'ui':
+        case 'ui_image':
             field = (
                 <Box key={key} sx={{ ...style }}>
                     <img src={props.value || props.default || ''} alt={props.label || key} data-key={key} />
                 </Box>
             );
             break;
+        case 'ui_dropdownicon':
+            const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+            const open = Boolean(anchorEl);
+            const targetField = Array.isArray(props.target) ? props.target : [props.target];
+            const targetElements = targetField.map((field: string) => anchorEl?.parentNode?.parentNode?.querySelector(`[data-id="${field}"]`));
+
+            const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+              setAnchorEl(event.currentTarget);
+            };
+            const handleMenuItemClick = (i: number) => {
+                setAnchorEl(null);
+                if (i<0) return;
+
+                const targetValue = Array.isArray(props.options[i].value) ? props.options[i].value : [props.options[i].value];
+
+                targetElements.forEach((el: HTMLElement, index: number) => {
+                    if (el && el.dataset && el.dataset.key) {
+                        onValueChange(nodeId, el.dataset.key, targetValue[index]);
+                    }
+                });
+            };
+
+            field = (
+                <Box key={key} sx={{ ...style }}>
+                    <IconButton
+                        aria-label="more"
+                        aria-haspopup="true"
+                        onClick={handleClick}
+                        title={props.label || key}
+                    >
+                        <MoreVertIcon />
+                    </IconButton>
+                    <Menu
+                        anchorEl={anchorEl}
+                        open={open}
+                        onClose={() => handleMenuItemClick(-1)}
+                        slotProps={{
+                            paper: {
+                                sx: {
+                                    boxShadow: "0px 4px 8px 2px rgba(0, 0, 0, 0.5)",
+                                    backgroundColor: theme.palette.secondary.dark,
+                                },
+                            },
+                        }}
+                    >
+                        {props.options.map((option: any, i: number) => (
+                            <MenuItem key={i} onClick={() => handleMenuItemClick(i)}>
+                                {option.label}
+                            </MenuItem>
+                        ))}
+                    </Menu>
+                </Box>
+            );
+            break;
         case 'slider':
         case 'number':
             field = (
-                <CustomNumberInput
-                    key={key}
-                    value={props.value || props.default || 0}
-                    label={props.label || key}
-                    dataType={dataType}
-                    min={props.min}
-                    max={props.max}
-                    step={props.step}
-                    slider={fieldType === 'slider'}
-                    onChange={(newValue) => onValueChange(nodeId, key, newValue)}
-                    style={style}
-                />
+                <>
+                    <CustomNumberInput
+                        key={key}
+                        value={props.value || props.default || 0}
+                        label={props.label || key}
+                        dataType={dataType}
+                        min={props.min}
+                        max={props.max}
+                        step={props.step}
+                        slider={fieldType === 'slider'}
+                        onChange={(newValue) => onValueChange(nodeId, key, newValue)}
+                        style={style}
+                    />
+                </>
             );
             break;
         default:
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, ...style }}>
+                <Box key={key} sx={{ pt: 1, pb: 1, '& input': { fontSize: '14px', ...style } }}>
                     <TextField
+                        data-id={key}
+                        data-key={key}
                         onChange={(e) => onValueChange(nodeId, key, e.target.value)}
                         variant="outlined"
                         type={fieldType}
@@ -223,6 +309,8 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         label={props.label || key}
                         value={props.value || props.default || ''}
                         className="nodrag"
+                        autoComplete="off"
+                        sx={ (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number') ? { '& input': { textAlign: 'right' } } : {} }
                     />
                 </Box>
             );
@@ -267,10 +355,14 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
             if (typeof data.group === 'string') {
                 group = {
                     key: data.group + '_group',
-                    display: 'group'
+                    //display: 'group'
                 }
             } else {
-                group = data.group;
+                group = {
+                    key: (data.group.key || 'untitled') + '_group',
+                    display: data.group.display || 'group',
+                    label: data.group.label || null,
+                }
             }
         }
 
