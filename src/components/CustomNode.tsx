@@ -1,4 +1,4 @@
-import { useState, MouseEvent } from 'react';
+import React, { useState, MouseEvent, useEffect } from 'react';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { styled, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box';
@@ -45,6 +45,48 @@ const PlainAccordion = styled(Accordion)(({ theme }) => ({
 //     fontSize: '13px',
 //     padding: '4px',
 // }));
+const DynamicComponent = ({ component, props }: { component: string, props: any }) => {
+    const [Component, setComponent] = useState<React.ComponentType<any> | null>(null);
+
+    useEffect(() => {
+        const script = document.createElement('script');
+
+        const loadComponent = async () => {
+            try {
+                const url = `http://${config.serverAddress}/custom_component/${component}`;
+                script.src = url;
+                script.async = true;
+
+                (window as any).React = React;
+                
+                // Wait for script to load
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.body.appendChild(script);
+                });
+
+                const LoadedComponent = (window as any).MyComponent;
+                setComponent(() => LoadedComponent);
+            } catch (error) {
+                console.error('Error loading component:', error);
+            }
+        };
+
+        loadComponent();
+
+        // Cleanup
+        return () => {
+            document.body.removeChild(script);
+        };
+    }, [component]);
+
+    if (!Component) {
+        return <div>Loading component: {component}...</div>;
+    }
+    
+    return <Component {...props} />;
+};
 
 const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void) => {
     let field;
@@ -188,7 +230,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 <Box key={key} sx={{ pt: 1, pb: 1, ...style }} className="nodrag nowheel">
                     <Autocomplete
                         disablePortal
-                        freeSolo
+                        freeSolo={props.no_validation ? true : false}
                         options={props.options || []}
                         renderInput={(params: any) => <TextField {...params} label={props.label || key} />}
                         onChange={(_, value) => onValueChange(nodeId, key, value)}
@@ -293,6 +335,25 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         style={style}
                     />
                 </>
+            );
+            break;
+        case 'custom':
+            const nodeActions = {
+                setValue: (cvalue: any) => onValueChange(nodeId, key, cvalue),
+                // TODO: we might need more actions in the future
+            };
+            
+            field = (
+                <Box key={key} sx={{ pt: 1, pb: 1, ...style }}>
+                    <DynamicComponent
+                        component={props.component}
+                        props={{
+                            ...props,
+                            nodeActions,
+                            nodeId,
+                        }}
+                    />
+                </Box>
             );
             break;
         default:
