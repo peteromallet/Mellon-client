@@ -125,7 +125,7 @@ export default function App() {
       proOptions={{hideAttribution: true}}
     >
       {/* <Controls position="bottom-right" /> */}
-      <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="rgba(255, 255, 255, 0.25)" />
+      <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="rgba(255, 255, 255, 0.3)" />
     </ReactFlow>
   );
 }

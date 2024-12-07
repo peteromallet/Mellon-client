@@ -54,6 +54,8 @@ createRoot(document.getElementById('root')!).render(
         <Box sx={{
           display: 'flex',
           flex: 1,
+          minHeight: 0,
+          height: '100%',
         }}>
           <ToolBar />
           <Box sx={{ flex: 1, height: '100%' }}>
