@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+import { useReactFlow } from '@xyflow/react'
 import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -15,7 +17,6 @@ import config from '../../config';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import SvgIcon from '@mui/material/SvgIcon'
-
 
 export default function AppToolbar() {
   const theme = useTheme()
@@ -44,7 +45,23 @@ export default function AppToolbar() {
     }
   }
 
-  console.log('serverAddress', config.serverAddress);
+  const { toObject } = useReactFlow();
+  
+  const onExport = useCallback(() => {
+    const flow = toObject();
+    const jsonString = JSON.stringify(flow, null, 2);
+    
+    // Create blob and download
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'workflow.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [toObject]);
 
   return (
     <Box sx={{
@@ -77,7 +94,13 @@ export default function AppToolbar() {
           </Box>
 
           <Box>
-            <Button disabled variant="text" startIcon={<GetAppIcon />}>Export</Button>
+            <Button 
+              variant="text" 
+              startIcon={<GetAppIcon />} 
+              onClick={onExport}
+            >
+              Export
+            </Button>
           </Box>
         </Stack>
         <Box>

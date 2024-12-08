@@ -43,6 +43,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider theme={themeOptions}>
       <CssBaseline />
+      <ReactFlowProvider>
       <Box sx={{
         display: 'flex',
         flexDirection: 'column',
@@ -59,12 +60,13 @@ createRoot(document.getElementById('root')!).render(
         }}>
           <ToolBar />
           <Box sx={{ flex: 1, height: '100%' }}>
-            <ReactFlowProvider>
+            
               <App />
-            </ReactFlowProvider>
+            
           </Box>
         </Box>
       </Box>
+      </ReactFlowProvider>
     </ThemeProvider>
   </StrictMode>
 )

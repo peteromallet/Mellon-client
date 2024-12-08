@@ -52,7 +52,7 @@ export default function App() {
   const { nodes, edges, onNodesChange, onEdgesChange, onConnect, addNode, getParam } = useNodeState(selectNodeState, shallow);
   const { nodeRegistry, updateNodeRegistry } = useNodeRegistryState(selectNodeRegistryState, shallow);
   const { connect: connectWebsocket } = useWebsocketState(selectWebsocketState, shallow);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, setNodes, setEdges, setViewport } = useReactFlow();
 
   // Load the list of available nodes
   useEffect(() => {
@@ -60,14 +60,44 @@ export default function App() {
     connectWebsocket('ws://' + config.serverAddress + '/ws');
   }, []);
 
+  // TODO: probably need to use useCallback
+  const onWorkflowDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file?.type !== 'application/json') return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const flow = JSON.parse(e.target?.result as string);
+      const { x = 0, y = 0, zoom = 1 } = flow.viewport;
+      setViewport({ x, y, zoom });
+      setNodes(flow.nodes);
+      setEdges(flow.edges);
+    };
+
+    reader.readAsText(file);
+  };
+
   // Handle drag and drop
   const onDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+
+    if (event.dataTransfer.types.includes('Files')) {
+      event.dataTransfer.dropEffect = 'copy';
+      return;
+    }
     event.dataTransfer.dropEffect = 'move';
   }
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+
+    // Handle workflow file drops
+    if (event.dataTransfer.files.length > 0) {
+      onWorkflowDrop(event);
+      return;
+    }
+
     if (!nodeRegistry) return;
 
     const key = event.dataTransfer.getData('text/plain');

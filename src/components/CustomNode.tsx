@@ -321,20 +321,18 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
         case 'slider':
         case 'number':
             field = (
-                <>
-                    <CustomNumberInput
-                        key={key}
-                        value={props.value || props.default || 0}
-                        label={props.label || key}
-                        dataType={dataType}
-                        min={props.min}
-                        max={props.max}
-                        step={props.step}
-                        slider={fieldType === 'slider'}
-                        onChange={(newValue) => onValueChange(nodeId, key, newValue)}
-                        style={style}
-                    />
-                </>
+                <CustomNumberInput
+                    key={key}
+                    value={props.value || props.default || 0}
+                    label={props.label || key}
+                    dataType={dataType}
+                    min={props.min}
+                    max={props.max}
+                    step={props.step}
+                    slider={fieldType === 'slider'}
+                    onChange={(newValue) => onValueChange(nodeId, key, newValue)}
+                    style={style}
+                />
             );
             break;
         case 'custom':
