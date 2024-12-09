@@ -137,7 +137,6 @@ export type NodeState = {
     nodes: CustomNodeType[];
     edges: Edge[];
     onNodesChange: OnNodesChange<CustomNodeType>;
-    onNodeDoubleClick: (id: string) => void;
     onEdgesChange: OnEdgesChange;
     onEdgeDoubleClick: (id: string) => void;
     onConnect: OnConnect;
@@ -169,10 +168,6 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 // TODO: should we retry?
             }
         }
-    },
-    onNodeDoubleClick: (id: string) => {
-      const updatedNodes = get().nodes.filter((node) => node.id !== id);
-      set({ nodes: updatedNodes });
     },
     onEdgesChange: (changes: EdgeChange<Edge>[]) => {
         set({ edges: applyEdgeChanges(changes, get().edges) });
