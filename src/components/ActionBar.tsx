@@ -31,7 +31,7 @@ export default function AppToolbar() {
     const graphData = exportGraph(sid ?? '');
 
     console.log(graphData);
-    
+
     try {
       await fetch('http://' + config.serverAddress + '/graph', {
         method: 'POST',
@@ -46,11 +46,11 @@ export default function AppToolbar() {
   }
 
   const { toObject } = useReactFlow();
-  
+
   const onExport = useCallback(() => {
     const flow = toObject();
     const jsonString = JSON.stringify(flow, null, 2);
-    
+
     // Create blob and download
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -94,9 +94,9 @@ export default function AppToolbar() {
           </Box>
 
           <Box>
-            <Button 
-              variant="text" 
-              startIcon={<GetAppIcon />} 
+            <Button
+              variant="text"
+              startIcon={<GetAppIcon />}
               onClick={onExport}
             >
               Export
@@ -111,6 +111,9 @@ export default function AppToolbar() {
             disabled={!isConnected}
             sx={{
               background: `linear-gradient(100deg, ${theme.palette.primary.main} 25%, #ff4259 90%)`,
+              '&.MuiButton-disabled': {
+                background: `linear-gradient(100deg, #aaa 25%, #ccc 90%)`,
+              }
             }}
           >
             Run

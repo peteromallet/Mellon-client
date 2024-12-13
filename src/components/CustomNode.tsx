@@ -1,4 +1,4 @@
-import React, { useState, MouseEvent, useEffect } from 'react';
+import React, { lazy, useState, MouseEvent, useEffect, Suspense } from 'react';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { styled, useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box';
@@ -15,6 +15,8 @@ import Stack from '@mui/material/Stack';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
+import Typography from '@mui/material/Typography';
+
 //import TextareaAutosize from '@mui/material/TextareaAutosize';
 import MenuItem from '@mui/material/MenuItem';
 import Menu from '@mui/material/Menu';
@@ -26,6 +28,9 @@ import AccessAlarmIcon from '@mui/icons-material/AccessAlarm';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import Autocomplete from '@mui/material/Autocomplete';
+
+// lazy loading
+const ThreePreview = lazy(() => import('./ThreePreview'));
 
 const PlainAccordion = styled(Accordion)(({ theme }) => ({
     boxShadow: 'none',
@@ -58,7 +63,7 @@ const DynamicComponent = ({ component, props }: { component: string, props: any 
                 script.async = true;
 
                 (window as any).React = React;
-                
+
                 // Wait for script to load
                 await new Promise((resolve, reject) => {
                     script.onload = resolve;
@@ -84,7 +89,7 @@ const DynamicComponent = ({ component, props }: { component: string, props: any 
     if (!Component) {
         return <div>Loading component: {component}...</div>;
     }
-    
+
     return <Component {...props} />;
 };
 
@@ -93,12 +98,25 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
     let fieldType = props.display || '';
     const theme = useTheme();
 
+    const style = props.style || {};
+
     if (fieldType === 'group') {
-        field = (
-            <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "center" }}>
-                {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
-            </Stack>
-        )
+        if (props.label) {
+            field = (
+                <Box sx={{ borderBottom: `2px solid ${theme.palette.divider}`, p: 0, mb: 1 }}>
+                    <Typography sx={{ fontSize: '13px', color: theme.palette.text.secondary, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{props.label}</Typography>
+                    <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "stretch", mt: 0.5, mb: 1 }}>
+                        {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
+                    </Stack>
+                </Box>
+            );
+        } else {
+            field = (
+                <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "stretch", mt: 1, mb: 1 }}>
+                    {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
+                </Stack>
+            );
+        }
         return field;
     }
 
@@ -121,8 +139,6 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
     // TODO: should we use an "allowedTypes" property instead?
     const dataType = Array.isArray(props.type) && props.type.length > 0 ? props.type[0] : props.type;
 
-    const style = props.style || {};
-
     if ( fieldType !== 'input' && fieldType !== 'output') {
         if (!fieldType && props.options && typeof props.options === 'object') {
             fieldType = 'select';
@@ -135,6 +151,8 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 fieldType = 'ui_image';
             } else if (dataType.toLowerCase() === 'dropdownicon') {
                 fieldType = 'ui_dropdownicon';
+            } else if (dataType.toLowerCase() === '3d') {
+                fieldType = 'ui_3d';
             }
         } else if (!fieldType) {
             fieldType = 'text';
@@ -264,6 +282,21 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 </Box>
             );
             break;
+        case 'ui_3d':
+            field = (
+                <Box key={key} sx={{ p: 0, m: 0, mt: 1, mb: 1, ...style }} className="nodrag nowheel">
+                    <Suspense fallback={<div>Loading 3D viewer...</div>}>
+                        <ThreePreview
+                            nodeId={nodeId}
+                            dataKey={key}
+                            value={props.value || props.default || ''}
+                            width={512}
+                            height={512}
+                        />
+                    </Suspense>
+                </Box>
+            );
+            break;
         case 'ui_dropdownicon':
             const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
             const open = Boolean(anchorEl);
@@ -340,7 +373,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 setValue: (cvalue: any) => onValueChange(nodeId, key, cvalue),
                 // TODO: we might need more actions in the future
             };
-            
+
             field = (
                 <Box key={key} sx={{ pt: 1, pb: 1, ...style }}>
                     <DynamicComponent

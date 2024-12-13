@@ -7,6 +7,8 @@ import CssBaseline from '@mui/material/CssBaseline';
 import "@fontsource/jetbrains-mono/latin-400.css";
 import "@fontsource/jetbrains-mono/latin-700.css";
 
+import { WebSocketProvider } from './components/WebsocketContext';
+
 const themeOptions = createTheme({
   components: {
   },
@@ -44,28 +46,28 @@ createRoot(document.getElementById('root')!).render(
     <ThemeProvider theme={themeOptions}>
       <CssBaseline />
       <ReactFlowProvider>
-      <Box sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        width: '100vw',
-        overflow: 'hidden',
-      }}>
-        <ActionBar />
         <Box sx={{
           display: 'flex',
-          flex: 1,
-          minHeight: 0,
-          height: '100%',
+          flexDirection: 'column',
+          height: '100vh',
+          width: '100vw',
+          overflow: 'hidden',
         }}>
-          <ToolBar />
-          <Box sx={{ flex: 1, height: '100%' }}>
-            
-              <App />
-            
+          <ActionBar />
+          <Box sx={{
+            display: 'flex',
+            flex: 1,
+            minHeight: 0,
+            height: '100%',
+          }}>
+            <ToolBar />
+            <Box sx={{ flex: 1, height: '100%' }}>
+              <WebSocketProvider>
+                <App />          
+              </WebSocketProvider>
+            </Box>
           </Box>
         </Box>
-      </Box>
       </ReactFlowProvider>
     </ThemeProvider>
   </StrictMode>

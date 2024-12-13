@@ -16,6 +16,9 @@ export type WebsocketState = {
 
     connect: (addr?: string) => void;
     disconnect: () => void;
+
+    modelData: Record<string, string>;
+    updateModelData: (nodeId: string, key: string, value: string) => void;
 }
 
 export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get) => ({
@@ -24,6 +27,17 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
     socket: null,
     isConnected: false,
     reconnectTimer: undefined,
+
+    modelData: {},
+
+    updateModelData: (nodeId: string, key: string, value: string) => {
+        set((state) => ({
+            modelData: {
+                ...state.modelData,
+                [`${nodeId}-${key}`]: value
+            }
+        }));
+    },
 
     connect: async (addr?: string) => {
         const { reconnectTimer } = get();
@@ -101,6 +115,19 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
                 if (el) {
                     el.setAttribute('src', `data:image/png;base64,${message.data}`);
                 }
+            }
+            else if (message.type === '3d') {
+                if (!message.data || !message.nodeId || !message.key) {
+                    console.error('Invalid 3D model message. Ignoring.');
+                    return;
+                }
+                const dataUrl = `data:model/gltf-binary;base64,${message.data}`;
+                get().updateModelData(message.nodeId, message.key, dataUrl);
+                    
+                // For blob data
+                // const blob = new Blob([message.data], { type: 'model/gltf-binary' });
+                // const url = URL.createObjectURL(blob);
+                // el.setAttribute('url', url);
             }
             else if (message.type === 'executed') {
                 console.log('executed', message);

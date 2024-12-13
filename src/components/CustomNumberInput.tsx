@@ -61,13 +61,13 @@ const CustomNumberInput = ({
 
     const getBackgroundStyle = (value: number) => {
         if (!displaySlider) return {};
-    
+
         const sliderPercent = isNaN(Number(value)) ? 0 : ((Number(value) - minValue) / (maxValue - minValue) * 100);
         const baseColor = isDraggingRef.current ? theme.palette.secondary.main : 'rgba(255,255,255,0.25)';
         const hoverColor = theme.palette.secondary.main;
-    
+
         const gradientStyle = `linear-gradient(to right, ${baseColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)`;
-    
+
         return {
             background: gradientStyle,
             '&:hover': { background: `linear-gradient(to right, ${hoverColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)` }
@@ -107,7 +107,7 @@ const CustomNumberInput = ({
         if (e.key === 'Enter' || e.key === 'Escape') {
             inputElement?.removeEventListener('blur', handleBlur as any);
             inputElement?.removeEventListener('keydown', handleKeyDown as any);
-            
+
             setIsEditing(false);
             updateValue(inputElement?.value || '');
             inputElement?.blur();
@@ -120,7 +120,7 @@ const CustomNumberInput = ({
         }
     }, [increment, updateValue]);
 
-    const handleMouseMove = useCallback((e: React.MouseEvent) => {          
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
         clearTimeout(dragTimeoutRef.current as any);
 
         e.preventDefault();
@@ -198,7 +198,7 @@ const CustomNumberInput = ({
             inputElement?.blur();
             isDraggingRef.current = true;
         }, 200);
-    
+
         document.addEventListener('mousemove', handleMouseMove as any);
         document.addEventListener('mouseup', handleMouseUp as any);
     };
@@ -231,12 +231,13 @@ const CustomNumberInput = ({
         <Stack
             key={props.key}
             direction="row"
-            spacing={1}
+            spacing={0.5}
             className="nodrag customNumberInput"
             onMouseDown={handleMouseDown}
             sx={{
                 mt: 1, mb: 1,
                 p: 0.5,
+                width: '100%',
                 justifyContent: 'space-between', alignItems: 'center',
                 ...getBackgroundStyle(Number(inputValue)),
                 borderRadius: 1,
@@ -259,8 +260,8 @@ const CustomNumberInput = ({
             >
                 <ChevronLeftIcon fontSize="small" />
             </IconButton>
-            <Box>
-                <Typography sx={{ fontSize: '14px' }}>{label}</Typography>
+            <Box sx={{ maxWidth: '50%'}}>
+                <Typography sx={{ fontSize: '14px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={label}>{label}</Typography>
             </Box>
             <InputBase
                 ref={inputRef}
