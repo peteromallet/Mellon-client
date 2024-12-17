@@ -235,7 +235,7 @@ const CustomNumberInput = ({
             className="nodrag customNumberInput"
             onMouseDown={handleMouseDown}
             sx={{
-                mt: 1, mb: 1,
+                mb: 1,
                 p: 0.5,
                 width: '100%',
                 justifyContent: 'space-between', alignItems: 'center',

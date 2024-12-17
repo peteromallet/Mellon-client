@@ -35,14 +35,14 @@ const ThreePreview = lazy(() => import('./ThreePreview'));
 const PlainAccordion = styled(Accordion)(({ theme }) => ({
     boxShadow: 'none',
     border: 0,
-    padding: '0px 0px 8px 0px',
+    padding: 0,
     margin: 0,
     background: 'transparent',
+    borderTop: `1px solid ${theme.palette.divider}`,
     '&:before': { background: 'transparent' },
-    '.MuiAccordionHeading:hover': { color: theme.palette.text.secondary },
-    '.MuiAccordionSummary-root': { border: 0, padding: '0px 8px', margin: '0px 0px 0px 0px', background: 'rgba(255, 255, 255, 0.05)' },
-    '.MuiAccordionDetails-root': { border: 0, padding: 0, margin: 0 },
-    '.MuiAccordionSummary-root:hover, .MuiAccordionSummary-root:hover .MuiAccordionSummary-expandIconWrapper': { color: theme.palette.secondary.light },
+    '.MuiAccordionSummary-root': { padding: '12px 4px', margin: 0, background: 'transparent', color: theme.palette.text.secondary, minHeight: '0' },
+    '.MuiAccordionDetails-root': { padding: 0, margin: 0 },
+    '.MuiAccordionSummary-root:hover, .MuiAccordionSummary-root:hover .MuiAccordionSummary-expandIconWrapper': { color: theme.palette.primary.main },
 }));
 
 
@@ -105,14 +105,14 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             field = (
                 <Box sx={{ borderBottom: `2px solid ${theme.palette.divider}`, p: 0, mb: 1 }}>
                     <Typography sx={{ fontSize: '13px', color: theme.palette.text.secondary, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{props.label}</Typography>
-                    <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "stretch", mt: 0.5, mb: 1 }}>
+                    <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "center", mt: 0.5, mb: 1 }}>
                         {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
                     </Stack>
                 </Box>
             );
         } else {
             field = (
-                <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "stretch", mt: 1, mb: 1 }}>
+                <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "center", mt: 0, mb: 0 }}>
                     {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
                 </Stack>
             );
@@ -245,7 +245,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         case 'autocomplete':
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, ...style }} className="nodrag nowheel">
+                <Box key={key} sx={{ pt: 1, pb: 1, minWidth: '320px', ...style }} className="nodrag nowheel">
                     <Autocomplete
                         disablePortal
                         freeSolo={props.no_validation ? true : false}
@@ -254,6 +254,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         onChange={(_, value) => onValueChange(nodeId, key, value)}
                         value={props.value || props.default || ''}
                         size="small"
+                        sx={{ '& + .MuiAutocomplete-popper .MuiAutocomplete-option': { fontSize: '12px' } }}
                     />
                 </Box>
             );
@@ -320,7 +321,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             };
 
             field = (
-                <Box key={key} sx={{ ...style }}>
+                <Box key={key} className="nodrag nowheel" sx={{ ...style }}>
                     <IconButton
                         aria-label="more"
                         aria-haspopup="true"
@@ -389,7 +390,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         default:
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, '& input': { fontSize: '14px', ...style } }}>
+                <Box key={key} sx={{ pt: 1, pb: 1, mb: 0, '& input': { fontSize: '14px', ...style } }}>
                     <TextField
                         data-id={key}
                         data-key={key}

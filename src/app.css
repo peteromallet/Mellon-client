@@ -3,7 +3,9 @@
   --category-image: 21, 95, 160;
   --category-utility: 139, 195, 74;
   --category-text-encoder: 228, 168, 15;
-  --category-vae: 109, 29, 163;
+  --category-vae: 93, 37, 130;
+  --category-samplers: 186, 21, 81;
+  --test: rgb(186, 21, 81);
 }
 
 .react-flow__handle {
@@ -12,6 +14,20 @@
   height: 9px;
   border-radius: 1px;
   outline: 4px solid #121212;
+}
+
+/*
+ * Handle clickable area
+ */
+.react-flow__handle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  cursor: crosshair;
 }
 
 .react-flow__handle-left {
@@ -41,6 +57,10 @@
   border-color: rgb(var(--category-default));
 }
 
+.left-sidebar .category-default:hover {
+  background-color: rgba(var(--category-default), 0.25);
+}
+
 .left-sidebar .category-image {
   border-color: rgb(var(--category-image));
   outline: 1px solid rgba(var(--category-image), 0.66);
@@ -56,12 +76,34 @@
   border-color: rgb(var(--category-text-encoder));
 }
 
+.left-sidebar .category-text-encoders:hover,
+.left-sidebar .category-t5:hover,
+.left-sidebar .category-clip:hover {
+  background-color: rgba(var(--category-text-encoder), 0.25);
+}
+
 .left-sidebar .category-utility {
   border-color: rgb(var(--category-utility));
 }
 
+.left-sidebar .category-utility:hover {
+  background-color: rgba(var(--category-utility), 0.25);
+}
+
 .left-sidebar .category-vae {
   border-color: rgb(var(--category-vae));
+}
+
+.left-sidebar .category-vae:hover {
+  background-color: rgba(var(--category-vae), 0.25);
+}
+
+.left-sidebar .category-samplers {
+  border-color: rgb(var(--category-samplers));
+}
+
+.left-sidebar .category-samplers:hover {
+  background-color: rgba(var(--category-samplers), 0.25);
 }
 
 /* Node header */
@@ -88,6 +130,10 @@
   border-color: rgb(var(--category-vae));
 }
 
+.react-flow__node-custom .category-samplers header {
+  border-color: rgb(var(--category-samplers));
+}
+
 /* Node selection */
 
 .react-flow__node-custom.selected .category-default {
@@ -112,6 +158,10 @@
   outline: 2px solid rgba(var(--category-vae), 0.66);
 }
 
+.react-flow__node-custom.selected .category-samplers {
+  outline: 2px solid rgba(var(--category-samplers), 0.66);
+}
+
 /* Node handles */
 
 .react-flow__node-custom .default-handle {
@@ -122,6 +172,7 @@
   background-color: rgb(var(--category-image));
 }
 
+.react-flow__node-custom .SD3Embeddings-handle,
 .react-flow__node-custom .SD3TextEncoders-handle,
 .react-flow__node-custom .T5Encoders-handle,
 .react-flow__node-custom .CLIPTextEncoders-handle {
@@ -134,6 +185,12 @@
 
 .react-flow__node-custom .vae-handle {
   background-color: rgb(var(--category-vae));
+}
+
+.react-flow__node-custom .SD3Pipeline-handle,
+.react-flow__node-custom .SD3Transformer2DModel-handle,
+.react-flow__node-custom .samplers-handle {
+  background-color: rgb(var(--category-samplers));
 }
 
 .react-flow__handle.valid {

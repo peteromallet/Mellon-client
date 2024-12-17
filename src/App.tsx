@@ -152,6 +152,7 @@ export default function App() {
       defaultEdgeOptions={defaultEdgeOptions}
       minZoom={0.1}
       maxZoom={1.2}
+      //connectionRadius={18}
       //fitView
       proOptions={{hideAttribution: true}}
       deleteKeyCode={['Backspace', 'Delete']}      
