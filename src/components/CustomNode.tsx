@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import TextField from '@mui/material/TextField';
 import Switch from '@mui/material/Switch';
+import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel/FormControlLabel';
 import FormGroup from '@mui/material/FormGroup';
 import CustomNumberInput from './CustomNumberInput';
@@ -40,7 +41,7 @@ const PlainAccordion = styled(Accordion)(({ theme }) => ({
     background: 'transparent',
     borderTop: `1px solid ${theme.palette.divider}`,
     '&:before': { background: 'transparent' },
-    '.MuiAccordionSummary-root': { padding: '12px 4px', margin: 0, background: 'transparent', color: theme.palette.text.secondary, minHeight: '0' },
+    '.MuiAccordionSummary-root': { padding: '0 4px', margin: 0, background: 'transparent', color: theme.palette.text.secondary, minHeight: '0' },
     '.MuiAccordionDetails-root': { padding: 0, margin: 0 },
     '.MuiAccordionSummary-root:hover, .MuiAccordionSummary-root:hover .MuiAccordionSummary-expandIconWrapper': { color: theme.palette.primary.main },
 }));
@@ -101,18 +102,22 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
     const style = props.style || {};
 
     if (fieldType === 'group') {
+        const hidden = props.hidden && props.hidden === true ? { display: 'none' } : {};
+        const alignItems = props.direction === 'column' ? 'stretch' : 'center';
+        const spacing = props.direction === 'column' ? 0 : 1;
+
         if (props.label) {
             field = (
-                <Box sx={{ borderBottom: `2px solid ${theme.palette.divider}`, p: 0, mb: 1 }}>
-                    <Typography sx={{ fontSize: '13px', color: theme.palette.text.secondary, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{props.label}</Typography>
-                    <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "center", mt: 0.5, mb: 1 }}>
+                <Box key={key} sx={{ borderBottom: `2px solid ${theme.palette.divider}`, p: 0, pt: 0.5 }} style={hidden} data-key={key}>
+                    <Typography sx={{ p: 0.5, fontSize: '13px', color: theme.palette.text.secondary, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{props.label}</Typography>
+                    <Stack direction={props.direction} spacing={spacing} sx={{ justifyContent: "space-between", alignItems: alignItems, mt: 0.5, mb: 1 }}>
                         {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
                     </Stack>
                 </Box>
             );
         } else {
             field = (
-                <Stack direction="row" spacing={1} key={key} sx={{ justifyContent: "space-between", alignItems: "center", mt: 0, mb: 0 }}>
+                <Stack direction={props.direction} spacing={spacing} key={key} sx={{ justifyContent: "space-between", alignItems: alignItems, mt: 0, mb: 0, ...hidden }}>
                     {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
                 </Stack>
             );
@@ -122,7 +127,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
 
     if (fieldType === 'collapse') {
         field = (
-            <PlainAccordion key={key} disableGutters={true} square={true}>
+            <PlainAccordion key={key} disableGutters={true} square={true} className="nodrag">
                 <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ border: 'none' }}>
                     {props.label || key}
                 </AccordionSummary>
@@ -207,11 +212,36 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         case 'select':
             const selectValue = props.value || props.default || '';
+    
+            const updateGroupVisibility = (value: string) => {
+                if (!props.onChange || props.onChange !== 'showGroup') return;
+        
+                const items = Array.isArray(props.options) 
+                    ? props.options.map((option: any) => ({ key: option.value }))
+                    : Object.keys(props.options).map(k => ({ key: k }));
+        
+                items.forEach(({ key }: { key: string }) => {
+                    const group = document.querySelector(`[data-id="${nodeId}"] [data-key="${key}_group"]`);
+                    if (group) {
+                        (group as HTMLElement).style.display = value === key ? 'block' : 'none';
+                    }
+                });
+            };
+        
+            // Handle initial visibility
+            useEffect(() => {
+                updateGroupVisibility(selectValue);
+            }, [nodeId, props.onChange, props.options, selectValue]);
+        
+            const onChange = (e: any) => {
+                updateGroupVisibility(e.target.value);
+                onValueChange(nodeId, key, e.target.value);
+            };
 
             field = (
                 <Box key={key} sx={{ pt: 1, pb: 1, ...style }}>
                     <TextField
-                        onChange={(e) => onValueChange(nodeId, key, e.target.value)}
+                        onChange={onChange}
                         variant="outlined"
                         fullWidth
                         size="small"
@@ -259,14 +289,58 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 </Box>
             );
             break;
-        case 'switch':
+        case 'tags':
             field = (
-                <Box key={key} sx={{ ml: '-8px', ...style }}>
+                <Box key={key} sx={{ pt: 1, pb: 1, minWidth: '320px', maxWidth: '460px', ...style }} className="nodrag nowheel">
+                    <Autocomplete
+                        multiple
+                        disablePortal
+                        filterSelectedOptions
+                        handleHomeEndKeys
+                        freeSolo={props.no_validation ? true : false}
+                        options={props.options || []}
+                        renderInput={(params: any) => <TextField {...params} label={props.label || key} />}
+                        onChange={(_, value) => onValueChange(nodeId, key, value)}
+                        value={props.value || props.default || []}
+                        size="small"
+                        sx={{ '& + .MuiAutocomplete-popper .MuiAutocomplete-option': { fontSize: '12px', p: 0.5, pl: 1, pr: 1 },
+                            '& .MuiChip-root': {
+                                borderRadius: '4px',
+                            },
+                        }}
+                    />
+                </Box>
+            );
+            break;
+        case 'checkbox':
+            field = (
+                <Box key={key} sx={{ m: 0, ml: -1, p:0, pb: 0, '& .MuiFormControlLabel-label': { fontSize: '14px' }, ...style }}>
                     <FormGroup>
                         <FormControlLabel
-                            sx={{ m: 0}}
-                            control={<Switch
+                            sx={{ m: 0, p: 0 }}
+                            control={<Checkbox
                                 color="secondary"
+                                defaultChecked={props.default || false}
+                                onChange={(e) => onValueChange(nodeId, key, e.target.checked)}
+                                className="nodrag"
+                            />}
+                            label={props.label || key}
+                        />
+                    </FormGroup>
+                </Box>
+            );
+            break;
+        case 'switch':
+            field = (
+                <Box key={key} sx={{ m: 0, pb: 1, pt: 0.5, '& .MuiFormControlLabel-label': { fontSize: '14px' }, ...style }}>
+                    <FormGroup>
+                        <FormControlLabel
+                            sx={{ m: 0, p: 0 }}
+                            control={<Switch
+                                sx={{ mr: 0.5 }}
+                                size="small"
+                                color="secondary"
+                                className="nodrag"
                                 defaultChecked={props.default || false}
                                 onChange={(e) => onValueChange(nodeId, key, e.target.checked)}
                             />}
@@ -455,6 +529,8 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                     key: (data.group.key || 'untitled') + '_group',
                     display: data.group.display || 'group',
                     label: data.group.label || null,
+                    hidden: data.group.hidden || false,
+                    direction: data.group.direction || 'row',
                 }
             }
         }
@@ -463,7 +539,13 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
             acc[key] = data;
         } else {
             if (!acc[group.key]) {
-                acc[group.key] = { display: group.display || 'group', label: group.label || null, params: {} };
+                acc[group.key] = {
+                    display: group.display || 'group',
+                    label: group.label || null,
+                    hidden: group.hidden || false,
+                    direction: group.direction || 'row',
+                    params: {},
+                };
             }
             acc[group.key].params[key] = data;
         }

@@ -109,10 +109,12 @@ export default function AppToolbar() {
             startIcon={<PlayArrowIcon />}
             onClick={onRun}
             disabled={!isConnected}
+            
             sx={{
               background: `linear-gradient(100deg, ${theme.palette.primary.main} 25%, #ff4259 90%)`,
-              '&.MuiButton-disabled': {
-                background: `linear-gradient(100deg, #aaa 25%, #ccc 90%)`,
+              '&.Mui-disabled': {
+                background: `linear-gradient(100deg, #6a6a6a, #303030)`,
+                color: '#1a1a1a',
               }
             }}
           >
