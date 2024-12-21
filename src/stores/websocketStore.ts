@@ -136,6 +136,12 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
                     return;
                 }
                 useNodeState.getState().setNodeExecuted(message.nodeId, true, message.time || 0, message.memory || 0);
+
+                if ('updateValues' in message) {
+                    Object.entries(message.updateValues).forEach(([k, v]) => {
+                        useNodeState.getState().setParamValue(message.nodeId, k, v);
+                    });
+                }
             }
         };
 

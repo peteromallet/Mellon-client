@@ -15,6 +15,7 @@ const CustomNumberInput = ({
     label = '',
     dataType = 'int',
     slider = false,
+    disabled = false,
     onChange,
     min,
     max,
@@ -22,11 +23,12 @@ const CustomNumberInput = ({
     style,
     ...props
 }: {
-    key: string;
+    dataKey: string;
     value: string | number;
     label: string;
     dataType?: string;
     slider?: boolean;
+    disabled?: boolean;
     onChange: EventHandler<any>;
     min?: number;
     max?: number;
@@ -229,13 +231,13 @@ const CustomNumberInput = ({
 
     const field = (
         <Stack
-            key={props.key}
+            data-key={props.dataKey}
             direction="row"
             spacing={0.5}
-            className="nodrag customNumberInput"
+            className={`nodrag customNumberInput${disabled ? ' mellon-disabled' : ''}`}
             onMouseDown={handleMouseDown}
             sx={{
-                mb: 1,
+                mb: 0,
                 p: 0.5,
                 width: '100%',
                 justifyContent: 'space-between', alignItems: 'center',

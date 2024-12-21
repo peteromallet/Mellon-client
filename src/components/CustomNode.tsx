@@ -29,6 +29,7 @@ import AccessAlarmIcon from '@mui/icons-material/AccessAlarm';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import Autocomplete from '@mui/material/Autocomplete';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 // lazy loading
 const ThreePreview = lazy(() => import('./ThreePreview'));
@@ -108,16 +109,51 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
 
         if (props.label) {
             field = (
-                <Box key={key} sx={{ borderBottom: `2px solid ${theme.palette.divider}`, p: 0, pt: 0.5 }} style={hidden} data-key={key}>
+                <Box
+                    key={key}
+                    data-key={key}
+                    sx={{
+                        '& .MuiFormControlLabel-label': { fontSize: '14px' },
+                        borderBottom: `2px solid ${theme.palette.divider}`,
+                        p: 0, pt: 0.5,
+                        ...hidden,
+                    }}
+                >
                     <Typography sx={{ p: 0.5, fontSize: '13px', color: theme.palette.text.secondary, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{props.label}</Typography>
-                    <Stack direction={props.direction} spacing={spacing} sx={{ justifyContent: "space-between", alignItems: alignItems, mt: 0.5, mb: 1 }}>
+                    <Stack
+                        direction={props.direction}
+                        spacing={spacing}
+                        sx={{
+                            '& > .MuiBox-root': { flex: "1" },
+                            '& > .flex-auto': { flex: "0 0 auto" },
+                            '& .MuiFormControlLabel-label': { fontSize: '14px' },
+                            justifyContent: "space-between",
+                            alignItems: alignItems,
+                            mt: 0.5,
+                            mb: 1,
+                        }}
+                    >
                         {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
                     </Stack>
                 </Box>
             );
         } else {
             field = (
-                <Stack direction={props.direction} spacing={spacing} key={key} sx={{ justifyContent: "space-between", alignItems: alignItems, mt: 0, mb: 0, ...hidden }}>
+                <Stack
+                    key={key}
+                    data-key={key}
+                    direction={props.direction}
+                    spacing={spacing}
+                    sx={{
+                        '& > .MuiBox-root': { flex: "1" },
+                        '& > .flex-auto': { flex: "0 0 auto" },
+                        '& .MuiFormControlLabel-label': { fontSize: '14px' },
+                        justifyContent: "space-between",
+                        alignItems: alignItems,
+                        mt: 0, mb: 0,
+                        ...hidden,
+                    }}
+                >
                     {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
                 </Stack>
             );
@@ -148,8 +184,8 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
         if (!fieldType && props.options && typeof props.options === 'object') {
             fieldType = 'select';
         } else if (dataType === 'boolean') {
-            fieldType = fieldType !== 'checkbox' ? 'switch' : fieldType;
-        } else if (!fieldType && (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number')) {
+            fieldType = fieldType === 'checkbox' || fieldType === 'iconToggle' ? fieldType : 'switch';
+        } else if (!fieldType && (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number' )) {
             fieldType = props.display === 'slider' ? 'slider' : 'number';
         } else if (fieldType === 'ui') {
             if (dataType === 'image') {
@@ -212,14 +248,14 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         case 'select':
             const selectValue = props.value || props.default || '';
-    
+
             const updateGroupVisibility = (value: string) => {
                 if (!props.onChange || props.onChange !== 'showGroup') return;
-        
-                const items = Array.isArray(props.options) 
+
+                const items = Array.isArray(props.options)
                     ? props.options.map((option: any) => ({ key: option.value }))
                     : Object.keys(props.options).map(k => ({ key: k }));
-        
+
                 items.forEach(({ key }: { key: string }) => {
                     const group = document.querySelector(`[data-id="${nodeId}"] [data-key="${key}_group"]`);
                     if (group) {
@@ -227,12 +263,12 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                     }
                 });
             };
-        
+
             // Handle initial visibility
             useEffect(() => {
                 updateGroupVisibility(selectValue);
             }, [nodeId, props.onChange, props.options, selectValue]);
-        
+
             const onChange = (e: any) => {
                 updateGroupVisibility(e.target.value);
                 onValueChange(nodeId, key, e.target.value);
@@ -395,7 +431,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             };
 
             field = (
-                <Box key={key} className="nodrag nowheel" sx={{ ...style }}>
+                <Box key={key} className="flex-auto nodrag" sx={{ ...style }}>
                     <IconButton
                         aria-label="more"
                         aria-haspopup="true"
@@ -428,9 +464,12 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         case 'slider':
         case 'number':
+            const disabled = props.disabled ? true : false;
+
             field = (
                 <CustomNumberInput
                     key={key}
+                    dataKey={key}
                     value={props.value || props.default || 0}
                     label={props.label || key}
                     dataType={dataType}
@@ -438,6 +477,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                     max={props.max}
                     step={props.step}
                     slider={fieldType === 'slider'}
+                    disabled={disabled}
                     onChange={(newValue) => onValueChange(nodeId, key, newValue)}
                     style={style}
                 />
@@ -462,9 +502,63 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                 </Box>
             );
             break;
+        case 'iconToggle':
+            const [selected, setSelected] = useState(props.value);
+            let icons = {};
+            if (props.icon === 'random') {
+                icons = {
+                    icon: <AutoFixHighIcon />,
+                    checkedIcon: <AutoFixHighIcon />,
+                };
+            }
+
+            const disableFields = (value: boolean) => {
+                const target = Array.isArray(props.onChange.target) ? props.onChange.target : [props.onChange.target];
+                target.forEach((field: string) => {
+                    const targetElement = document.querySelector(`[data-id="${nodeId}"] [data-key="${field}"]`);
+                    if (targetElement) {
+                        (targetElement as HTMLInputElement).classList.toggle('mellon-disabled', value);
+                    }
+                });
+            }
+
+            const handleChange = (value: boolean) => {
+                setSelected(value);
+                onValueChange(nodeId, key, value);
+                disableFields(value);
+            }
+
+            useEffect(() => {
+                setSelected(props.value);
+                disableFields(props.value);
+            }, [props.value]);
+
+            field = (
+                <Box key={key} sx={{ ...style }} className="flex-auto nodrag">
+                    <Checkbox
+                        size="small"
+                        sx={{
+                            p: "8px 8px 8px 8px",
+                            m: 0,
+                            border: 1,
+                            borderRadius: 1,
+                            borderColor: theme.palette.divider,
+                            '&.Mui-checked': {
+                                backgroundColor: theme.palette.secondary.main,
+                                color: theme.palette.background.paper,
+                            }
+                        }}
+                        {...icons}
+                        checked={selected}
+                        title={props.label || key}
+                        onChange={() => handleChange(!selected)}
+                    />
+                </Box>
+            );
+            break;
         default:
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, mb: 0, '& input': { fontSize: '14px', ...style } }}>
+                <Box key={key} sx={{ pt: 1, pb: 0, mb: 0, '& input': { fontSize: '14px', ...style } }}>
                     <TextField
                         data-id={key}
                         data-key={key}
@@ -596,6 +690,12 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                     paddingLeft: 1,
                     paddingRight: 1,
                     paddingTop: '4px',
+                    '& > .MuiStack-root': {
+                        mb: 1,
+                    },
+                    '& .MuiAccordionDetails-root > .MuiStack-root': {
+                        mb: 1,
+                    },
                 }}
             >
                 {fields}
