@@ -16,9 +16,11 @@ import config from '../../config';
 // Icons
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import GetAppIcon from '@mui/icons-material/GetApp';
+import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import SvgIcon from '@mui/material/SvgIcon'
 
 export default function AppToolbar() {
+  const { setNodes, setEdges, toObject, setViewport } = useReactFlow();
   const theme = useTheme()
   const { exportGraph } = useNodeState((state: NodeState) => ({ exportGraph: state.exportGraph }), shallow);
   const { sid, isConnected } = useWebsocketState((state: WebsocketState) => ({ sid: state.sid, isConnected: state.isConnected }), shallow);
@@ -45,8 +47,6 @@ export default function AppToolbar() {
     }
   }
 
-  const { toObject } = useReactFlow();
-
   const onExport = useCallback(() => {
     const flow = toObject();
     const jsonString = JSON.stringify(flow, null, 2);
@@ -62,6 +62,19 @@ export default function AppToolbar() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   }, [toObject]);
+
+  const onNew = useCallback(() => {
+    // Clear the nodes and edges
+    setNodes([]);
+    setEdges([]);
+    
+    // Clear localStorage
+    localStorage.removeItem('workflow');
+    
+    const defaultViewport = { x: 0, y: 0, zoom: 1 };
+    localStorage.setItem('workflow', JSON.stringify({ nodes: [], edges: [], viewport: defaultViewport }));
+    setViewport(defaultViewport);
+  }, [setNodes, setEdges]);
 
   return (
     <Box sx={{
@@ -94,6 +107,14 @@ export default function AppToolbar() {
           </Box>
 
           <Box>
+          <Button
+              variant="text"
+              startIcon={<InsertDriveFileOutlinedIcon />}
+              onClick={onNew}
+              sx={{ mr: 1 }}  // Add margin between buttons
+            >
+              New
+            </Button>
             <Button
               variant="text"
               startIcon={<GetAppIcon />}

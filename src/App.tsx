@@ -7,7 +7,8 @@ import {
   NodeOrigin,
   useReactFlow,
   Connection,
-  IsValidConnection
+  IsValidConnection,
+  Viewport
 } from '@xyflow/react';
 import { shallow } from 'zustand/shallow';
 import { useNodeState, NodeState, CustomNodeType } from './stores/nodeStore';
@@ -58,10 +59,25 @@ export default function App() {
 
   // Load the list of available nodes
   useEffect(() => {
+    const stored = localStorage.getItem('workflow');
+    if (stored) {
+      const { nodes: storedNodes, edges: storedEdges } = JSON.parse(stored);
+
+      setNodes(storedNodes || []);
+      setEdges(storedEdges || []);
+    }
+
     updateNodeRegistry();
     connectWebsocket('ws://' + config.serverAddress + '/ws');
   }, []);
 
+  // Save viewport position when it changes
+  const onMoveEnd = (_: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+    const workflow = JSON.parse(localStorage.getItem('workflow') || '{}');
+    workflow.viewport = viewport;
+    localStorage.setItem('workflow', JSON.stringify(workflow));
+  };
+  
   // TODO: probably need to use useCallback
   const onWorkflowDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -136,6 +152,18 @@ export default function App() {
     return true;
   }
 
+  // Get stored viewport or use defaults
+  const defaultViewport = (() => {
+    const stored = localStorage.getItem('workflow');
+    if (stored) {
+      const { viewport } = JSON.parse(stored);
+      if (viewport) {
+        return viewport;
+      }
+    }
+    return { x: 0, y: 0, zoom: 1 };
+  })();
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -149,9 +177,11 @@ export default function App() {
       nodeOrigin={nodeOrigin}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onMoveEnd={onMoveEnd}
       edgesReconnectable={true}
       connectionLineStyle={connectionLineStyle}
       defaultEdgeOptions={defaultEdgeOptions}
+      defaultViewport={defaultViewport}
       minZoom={0.1}
       maxZoom={1.2}
       //connectionRadius={18}

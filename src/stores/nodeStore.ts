@@ -46,6 +46,12 @@ type NodeData = {
     style?: { [key: string]: string };
 };
 
+type StoredWorkflow = {
+    nodes: CustomNodeType[];
+    edges: Edge[];
+    viewport?: { x: number; y: number; zoom: number };
+  };
+
 export type CustomNodeType = Node<NodeData, 'custom'>;
 
 // Data format for API export
@@ -148,11 +154,19 @@ export type NodeState = {
 };
 
 export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
-    nodes: [],
-    edges: [],
-    onNodesChange: async (changes: NodeChange<CustomNodeType>[]) => {
-        set({ nodes: applyNodeChanges(changes, get().nodes) });
+    nodes: JSON.parse(localStorage.getItem('workflow') || '{"nodes":[]}').nodes || [],
+    edges: JSON.parse(localStorage.getItem('workflow') || '{"edges":[]}').edges || [],
 
+    onNodesChange: async (changes: NodeChange<CustomNodeType>[]) => {
+        const newNodes = applyNodeChanges(changes, get().nodes);
+        set({ nodes: newNodes });
+
+        // Save to localStorage after changes
+        const stored = localStorage.getItem('workflow');
+        const { viewport } = stored ? JSON.parse(stored) : { viewport: { x: 0, y: 0, zoom: 1 } };
+        const workflow: StoredWorkflow = { nodes: newNodes, edges: get().edges, viewport };
+        localStorage.setItem('workflow', JSON.stringify(workflow));
+        
         // delete the server cache for the deleted nodes
         if (changes.some(change => change.type === 'remove')) {
             // Create an array of node ids to delete
@@ -170,7 +184,14 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         }
     },
     onEdgesChange: (changes: EdgeChange<Edge>[]) => {
-        set({ edges: applyEdgeChanges(changes, get().edges) });
+        const newEdges = applyEdgeChanges(changes, get().edges);
+        set({ edges: newEdges });
+
+        // Save to localStorage after changes
+        const stored = localStorage.getItem('workflow');
+        const { viewport } = stored ? JSON.parse(stored) : { viewport: { x: 0, y: 0, zoom: 1 } };
+        const workflow: StoredWorkflow = { nodes: get().nodes, edges: newEdges, viewport };
+        localStorage.setItem('workflow', JSON.stringify(workflow));
     },
     onEdgeDoubleClick: (id: string) => {
         const updatedEdges = get().edges.filter((edge) => edge.id !== id);
@@ -181,7 +202,12 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
             edge => !(edge.target === conn.target && edge.targetHandle === conn.targetHandle)
         );
         const newEdge = { ...conn, id: nanoid() };
-        set({ edges: [...updatedEdges, newEdge] });
+        const newEdges = [...updatedEdges, newEdge];
+        set({ edges: newEdges });
+
+        // Save to localStorage after changes
+        const workflow: StoredWorkflow = { nodes: get().nodes, edges: newEdges };
+        localStorage.setItem('workflow', JSON.stringify(workflow));
     },
     addNode: (node: CustomNodeType) => {
         //const newNode = { ...node, dragHandle: 'header' };
@@ -196,7 +222,12 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 };
             });
         }
-        set({ nodes: [...get().nodes, node] });
+        const newNodes = [...get().nodes, node];
+        set({ nodes: newNodes });
+
+        // Save to localStorage after changes
+        const workflow: StoredWorkflow = { nodes: newNodes, edges: get().edges };
+        localStorage.setItem('workflow', JSON.stringify(workflow));
     },
     setParamValue: (id: string, key: string, value: any) => {
         set({
