@@ -143,7 +143,7 @@ export default function App() {
       nodeTypes={nodeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      onEdgeDoubleClick={(event, node) => onEdgeDoubleClick(node.id)}
+      onEdgeDoubleClick={(_, edge) => onEdgeDoubleClick(edge.id)}
       isValidConnection={isValidConnection as IsValidConnection}
       onConnect={onConnect}
       nodeOrigin={nodeOrigin}

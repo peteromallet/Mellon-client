@@ -11,6 +11,7 @@ import FormGroup from '@mui/material/FormGroup';
 import CustomNumberInput from './CustomNumberInput';
 import config from '../../config';
 import { useNodeState, NodeState, CustomNodeType } from '../stores/nodeStore';
+import { useWebsocketState } from '../stores/websocketStore';
 import { shallow } from 'zustand/shallow';
 import Stack from '@mui/material/Stack';
 import Accordion from '@mui/material/Accordion';
@@ -30,6 +31,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import Autocomplete from '@mui/material/Autocomplete';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import LinearProgress from '@mui/material/LinearProgress';
 
 // lazy loading
 const ThreePreview = lazy(() => import('./ThreePreview'));
@@ -203,7 +205,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
     switch (fieldType) {
         case 'input':
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, position: 'relative', ...style }}>
+                <Box key={key} sx={{ pt: "4px", pb: "4px", position: 'relative', ...style }}>
                     <Handle
                         id={key}
                         type="target"
@@ -216,7 +218,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             break;
         case 'output':
             field = (
-                <Box key={key} sx={{ pt: 1, pb: 1, position: 'relative', ...style }}>
+                <Box key={key} sx={{ pt: "4px", pb: "4px", position: 'relative', ...style }}>
                     <Handle
                         id={key}
                         type="source"
@@ -582,7 +584,15 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
 
 const CustomNode = (props: NodeProps<CustomNodeType>) => {
     const theme = useTheme();
-    const { setParamValue, setNodeExecuted } = useNodeState((state: NodeState) => ({ setParamValue: state.setParamValue, setNodeExecuted: state.setNodeExecuted }), shallow);
+    const { setParamValue, setNodeExecuted } = useNodeState((state: NodeState) => ({
+        setParamValue: state.setParamValue,
+        setNodeExecuted: state.setNodeExecuted
+    }), shallow);
+
+    const nodeProgress = useWebsocketState(
+        (state) => state.nodeProgress[props.id] || { value: 0, type: 'determinate' },
+        shallow
+    );
 
     //const onValueChange = (nodeId: string, key: string, value: any) => {
     //    setParamValue(nodeId, key, value);
@@ -665,15 +675,12 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
             <Box
                 component="header"
                 sx={{
-                    //fontWeight: '700',
                     color: theme.palette.common.white,
                     padding: '8px 10px 8px 10px',
                     borderTopWidth: '6px',
                     borderTopStyle: 'solid',
                     borderTopColor: 'rgba(0, 0, 0, 0.2)',
                     backgroundColor: '#121212',
-                    //borderTopLeftRadius: 4,
-                    //borderTopRightRadius: 4,
                     fontSize: '15px',
                     textShadow: '0px 2px 0px rgba(0, 0, 0, 0.75)',
                 }}
@@ -703,65 +710,101 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
             <Box
                 component="footer"
                 sx={{
-                    padding: 1,
-                    backgroundColor: theme.palette.background.paper,
-                    color: theme.palette.text.secondary,
-                    borderTop: `2px solid ${theme.palette.divider}`,
-                    //borderBottomLeftRadius: 4,
-                    //borderBottomRightRadius: 4,
-                    ".MuiChip-icon": { fontSize: '14px' },
+                    padding: 0,
+                    backgroundColor: '#121212',
                 }}
             >
-                <Stack
-                    direction="row"
-                    spacing={2}
-                    sx={{
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                    }}
-                >
-                    <Chip
-                        icon={<DeleteForeverIcon />}
-                        label="Cache"
-                        title="Clear Cache"
-                        onClick={onClearCache}
-                        disabled={!props.data.cache}
-                        color="secondary"
-                        variant="filled"
+                <Box sx={{ width: '100%' }}>
+                    <LinearProgress
+                        variant={nodeProgress.type === 'indeterminate' ? 'indeterminate' : 'determinate'}
+                        color="inherit"
+                        value={nodeProgress.value}
+                        className={nodeProgress.type === 'disabled' ? 'progress-disabled' : ''}
                         sx={{
-                            height: '24px',
-                            borderRadius: 0.5,
-                            fontSize: '12px',
-                            span: { padding: '0px 8px 0px 10px' },
-                        }}
+                            height: '4px',
+                            '&.progress-disabled': {
+                                '& .MuiLinearProgress-bar': {
+                                    display: 'none',
+                                },
+                            },
+                            '& .MuiLinearProgress-bar1Indeterminate': {
+                                background: `repeating-linear-gradient(45deg, ${theme.palette.primary.main} 0, ${theme.palette.primary.main} 20px, ${theme.palette.primary.dark} 20px, ${theme.palette.primary.dark} 40px)`,
+                                backgroundSize: '60px 100%',
+                                backgroundPosition: '0 0',
+                                left: '0', right: '0',
+                                animation: 'mellon-progress-ind 1s linear infinite',
+                            },
+                            '& .MuiLinearProgress-bar1Determinate': {
+                                transitionDuration: '80ms',
+                                background: `linear-gradient(100deg, ${theme.palette.primary.main} 50%, #ff4259 90%)`,
+                            },
+                            '& .MuiLinearProgress-bar2Indeterminate': {
+                                display: 'none',
+                                animation: 'none',
+                            },
+                         }}
                     />
-                    {/* <Chip
-                        icon={<MemoryIcon />}
-                        label={props.data.memory ? `${props.data.memory}` : '0Mb'}
-                        title="Memory Usage"
+                </Box>
+
+                <Box sx={{ p: 1 }}>
+                    <Stack
+                        direction="row"
+                        spacing={2}
                         sx={{
-                            color: theme.palette.text.secondary,
-                            height: '24px',
-                            borderRadius: 0.5,
-                            fontSize: '12px',
-                            span: { padding: '0px 8px 0px 10px' },
-                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            justifyContent: "space-between",
+                            alignItems: "center",
                         }}
-                    /> */}
-                    <Chip
-                        icon={<AccessAlarmIcon />}
-                        label={props.data.time ? `${props.data.time}s` : '-'}
-                        title="Execution Time"
-                        sx={{
-                            color: theme.palette.text.secondary,
-                            height: '24px',
-                            borderRadius: 0.5,
-                            fontSize: '12px',
-                            span: { padding: '0px 8px 0px 10px' },
-                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                        }}
-                    />
-                </Stack>
+                    >
+                        <Chip
+                            icon={<DeleteForeverIcon />}
+                            label="Cache"
+                            title="Clear Cache"
+                            onClick={onClearCache}
+                            disabled={!props.data.cache}
+                            color="secondary"
+                            variant="filled"
+                            sx={{
+                                height: '24px',
+                                borderRadius: 0.5,
+                                fontSize: '12px',
+                                span: { padding: '0px 8px 0px 10px' },
+                                '& .MuiChip-icon': {
+                                    fontSize: '18px',
+                                },
+                            }}
+                        />
+                        {/* <Chip
+                            icon={<MemoryIcon />}
+                            label={props.data.memory ? `${props.data.memory}` : '0Mb'}
+                            title="Memory Usage"
+                            sx={{
+                                color: theme.palette.text.secondary,
+                                height: '24px',
+                                borderRadius: 0.5,
+                                fontSize: '12px',
+                                span: { padding: '0px 8px 0px 10px' },
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                            }}
+                        /> */}
+                        <Chip
+                            icon={<AccessAlarmIcon />}
+                            label={props.data.time ? `${props.data.time}s` : '-'}
+                            title="Execution Time"
+                            sx={{
+                                color: theme.palette.text.secondary,
+                                height: '24px',
+                                borderRadius: 0.5,
+                                fontSize: '12px',
+                                span: { padding: '0px 8px 0px 10px' },
+                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                '& .MuiChip-icon': {
+                                    fontSize: '18px',
+                                    color: theme.palette.text.secondary,
+                                },
+                            }}
+                        />
+                    </Stack>
+                </Box>
             </Box>
         </Box>
     );

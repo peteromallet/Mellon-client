@@ -7,6 +7,11 @@ const selectNodeState = (state: NodeState) => ({
     setParamValue: state.setParamValue,
 });
 */
+type NodeProgress = {
+    value: number;
+    type: 'determinate' | 'indeterminate' | 'disabled';
+};
+
 export type WebsocketState = {
     address: string | null;
     sid: string | null;
@@ -17,8 +22,11 @@ export type WebsocketState = {
     connect: (addr?: string) => void;
     disconnect: () => void;
 
-    modelData: Record<string, string>;
-    updateModelData: (nodeId: string, key: string, value: string) => void;
+    threeData: Record<string, string>;
+    updateThreeData: (nodeId: string, key: string, value: string) => void;
+
+    nodeProgress: Record<string, NodeProgress>;
+    updateNodeProgress: (nodeId: string, progress: number) => void;
 }
 
 export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get) => ({
@@ -28,12 +36,24 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
     isConnected: false,
     reconnectTimer: undefined,
 
-    modelData: {},
-
-    updateModelData: (nodeId: string, key: string, value: string) => {
+    nodeProgress: {},
+    updateNodeProgress: (nodeId: string, progress: number) => {
         set((state) => ({
-            modelData: {
-                ...state.modelData,
+            nodeProgress: {
+                ...state.nodeProgress,
+                [nodeId]: {
+                    value: progress < 0 ? 0 : progress,
+                    type: progress === -1 ? 'indeterminate' : progress === -2 ? 'disabled' : 'determinate'
+                }
+            }
+        }));
+    },
+
+    threeData: {},
+    updateThreeData: (nodeId: string, key: string, value: string) => {
+        set((state) => ({
+            threeData: {
+                ...state.threeData,
                 [`${nodeId}-${key}`]: value
             }
         }));
@@ -105,6 +125,12 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
                 }
                 console.info('WebSocket connection established');
             }
+            else if (message.type === 'progress') {
+                if (!message.progress || !message.nodeId ) {
+                    return;
+                }
+                get().updateNodeProgress(message.nodeId, message.progress);
+            }
             else if (message.type === 'image') {
                 if (!message.data || !message.nodeId || !message.key) {
                     console.error('Invalid image message. Ignoring.');
@@ -122,7 +148,7 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
                     return;
                 }
                 const dataUrl = `data:model/gltf-binary;base64,${message.data}`;
-                get().updateModelData(message.nodeId, message.key, dataUrl);
+                get().updateThreeData(message.nodeId, message.key, dataUrl);
                     
                 // For blob data
                 // const blob = new Blob([message.data], { type: 'model/gltf-binary' });
@@ -136,12 +162,25 @@ export const useWebsocketState = createWithEqualityFn<WebsocketState>((set, get)
                     return;
                 }
                 useNodeState.getState().setNodeExecuted(message.nodeId, true, message.time || 0, message.memory || 0);
+                get().updateNodeProgress(message.nodeId, -2);
 
-                if ('updateValues' in message) {
-                    Object.entries(message.updateValues).forEach(([k, v]) => {
-                        useNodeState.getState().setParamValue(message.nodeId, k, v);
-                    });
+                // if ('updateValues' in message) {
+                //     Object.entries(message.updateValues).forEach(([k, v]) => {
+                //         useNodeState.getState().setParamValue(message.nodeId, k, v);
+                //     });
+                // }
+            }
+            else if (message.type === 'updateValues') {
+                console.log('UpdateValues', message);
+                if (!message.nodeId || !message.key || !message.value) {
+                    console.error('Invalid updateValues message. Ignoring.');
+                    return;
                 }
+                useNodeState.getState().setParamValue(message.nodeId, message.key, message.value);
+            }
+            else if (message.type === 'error') {
+                console.error('Error:', message.error);
+                set({ nodeProgress: {} });
             }
         };
 

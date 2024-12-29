@@ -173,8 +173,8 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         set({ edges: applyEdgeChanges(changes, get().edges) });
     },
     onEdgeDoubleClick: (id: string) => {
-      const updatedEdges = get().edges.filter((edge) => edge.id !== id);
-      set({ edges: updatedEdges });
+        const updatedEdges = get().edges.filter((edge) => edge.id !== id);
+        set({ edges: updatedEdges });
     },
     onConnect: (conn: Connection) => {
         const updatedEdges = get().edges.filter(

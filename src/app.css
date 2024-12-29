@@ -51,6 +51,27 @@
   opacity: 0.5 !important;
 }
 
+/* 
+@keyframes mellon-progress-ind {
+  0% { left:-35%; right:98%; }
+  100% { left:98%; right:-35%; }
+}
+@-webkit-keyframes mellon-progress-ind {
+  0% { left:-35%; right:100%; }
+  100% { left:100%; right:-35%; }
+} */
+
+
+@keyframes mellon-progress-ind {
+  0% { background-position: 0% 0%; }
+  100% { background-position: -60px 0%; }
+}
+@-webkit-keyframes mellon-progress-ind {
+  0% { background-position: 0% 0%; }
+  100% { background-position: -60px 0%; }
+}
+
+
 /*
  * Category Colors
  * ----------------------------------------------------------------------------
