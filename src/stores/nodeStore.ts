@@ -31,6 +31,7 @@ type NodeParams = {
     step?: number;
     group?: string | { [key: string]: string };
     style?: { [key: string]: string };
+    connections?: Array<{ targetId: string; targetParam: string }>;
 };
 
 type NodeData = {
@@ -75,6 +76,8 @@ type GraphExport = {
     nodes: { [key: string]: APINodeData };
     paths: string[][];
 };
+
+type CustomComponent = CustomNodeType;
 
 const formatAPIData = (node: CustomNodeType, edge: Edge[]): APINodeData => {
     const inputEdges = edge.filter(e => e.target === node.id);
@@ -147,31 +150,28 @@ export type NodeState = {
     onEdgeDoubleClick: (id: string) => void;
     onConnect: OnConnect;
     addNode: (node: CustomNodeType) => void;
-    setParamValue: (id: string, key: string, value: any) => void;
-    getParam: (id: string, param: string, key: keyof NodeParams) => any;
+    setParamValue: (nodeId: string, paramName: string, value: any) => void;
+    getParam: (nodeId: string, paramName: string) => any;
     setNodeExecuted: (id: string, cache: boolean, time: number, memory: number) => void;
     exportGraph: (sid: string) => GraphExport;
+    initializeNodes: () => void;
 };
 
-export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
-    nodes: JSON.parse(localStorage.getItem('workflow') || '{"nodes":[]}').nodes || [],
-    edges: JSON.parse(localStorage.getItem('workflow') || '{"edges":[]}').edges || [],
+interface NodeStore {
+    setParamValue: (nodeId: string, paramName: string, value: any) => void;
+    getParam: (nodeId: string, paramName: string) => any;
+}
 
+export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
+    nodes: [],
+    edges: [],
     onNodesChange: async (changes: NodeChange<CustomNodeType>[]) => {
         const newNodes = applyNodeChanges(changes, get().nodes);
         set({ nodes: newNodes });
-
-        // Save to localStorage after changes
-        const stored = localStorage.getItem('workflow');
-        const { viewport } = stored ? JSON.parse(stored) : { viewport: { x: 0, y: 0, zoom: 1 } };
-        const workflow: StoredWorkflow = { nodes: newNodes, edges: get().edges, viewport };
-        localStorage.setItem('workflow', JSON.stringify(workflow));
         
         // delete the server cache for the deleted nodes
         if (changes.some(change => change.type === 'remove')) {
-            // Create an array of node ids to delete
             const nodeIds = changes.filter(change => change.type === 'remove').map(change => change.id);
-            
             try {
                 await fetch('http://' + config.serverAddress + '/clearNodeCache', {
                     method: 'DELETE',
@@ -179,40 +179,78 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 });
             } catch (error) {
                 console.error('Can\'t connect to server to clear cache:', error);
-                // TODO: should we retry?
             }
         }
     },
     onEdgesChange: (changes: EdgeChange<Edge>[]) => {
         const newEdges = applyEdgeChanges(changes, get().edges);
         set({ edges: newEdges });
-
-        // Save to localStorage after changes
-        const stored = localStorage.getItem('workflow');
-        const { viewport } = stored ? JSON.parse(stored) : { viewport: { x: 0, y: 0, zoom: 1 } };
-        const workflow: StoredWorkflow = { nodes: get().nodes, edges: newEdges, viewport };
-        localStorage.setItem('workflow', JSON.stringify(workflow));
     },
     onEdgeDoubleClick: (id: string) => {
         const updatedEdges = get().edges.filter((edge) => edge.id !== id);
         set({ edges: updatedEdges });
     },
     onConnect: (conn: Connection) => {
+        console.log('Creating new connection:', conn);
+        const sourceNode = get().nodes.find(node => node.id === conn.source);
+        const targetNode = get().nodes.find(node => node.id === conn.target);
+        
+        console.log('Source node:', sourceNode);
+        console.log('Target node:', targetNode);
+        
         const updatedEdges = get().edges.filter(
             edge => !(edge.target === conn.target && edge.targetHandle === conn.targetHandle)
         );
         const newEdge = { ...conn, id: nanoid() };
         const newEdges = [...updatedEdges, newEdge];
+        console.log('New edges after connection:', newEdges);
         set({ edges: newEdges });
 
-        // Save to localStorage after changes
-        const workflow: StoredWorkflow = { nodes: get().nodes, edges: newEdges };
-        localStorage.setItem('workflow', JSON.stringify(workflow));
+        // If we have both nodes, set up the data connection
+        if (sourceNode && targetNode && conn.sourceHandle && conn.targetHandle) {
+            // Get the current value from the source node's params
+            const sourceParam = sourceNode.data.params[conn.sourceHandle];
+            console.log('Source param to transfer:', sourceParam);
+            
+            // Update the target node with the source value
+            if (sourceParam?.value !== undefined) {
+                get().setParamValue(targetNode.id, conn.targetHandle, sourceParam.value);
+            }
+
+            // Store the connection info for future updates
+            const sourceHandle = conn.sourceHandle;
+            const targetHandle = conn.targetHandle;
+            
+            set((state: NodeState) => {
+                const updatedNodes = state.nodes.map(node => {
+                    if (node.id === sourceNode.id) {
+                        const currentParams = node.data.params[sourceHandle] || {};
+                        const currentConnections = currentParams.connections || [];
+                        
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                params: {
+                                    ...node.data.params,
+                                    [sourceHandle]: {
+                                        ...currentParams,
+                                        connections: [
+                                            ...currentConnections,
+                                            { targetId: targetNode.id, targetParam: targetHandle }
+                                        ]
+                                    }
+                                }
+                            }
+                        };
+                    }
+                    return node;
+                });
+                return { ...state, nodes: updatedNodes };
+            });
+        }
     },
     addNode: (node: CustomNodeType) => {
-        //const newNode = { ...node, dragHandle: 'header' };
-
-        // Set initial value for all parameters, TODO: needed? default value should be exported by the server
         if (node.data?.params) {
             Object.keys(node.data.params).forEach(key => {
                 const param = node.data.params[key];
@@ -224,35 +262,63 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         }
         const newNodes = [...get().nodes, node];
         set({ nodes: newNodes });
-
-        // Save to localStorage after changes
-        const workflow: StoredWorkflow = { nodes: newNodes, edges: get().edges };
-        localStorage.setItem('workflow', JSON.stringify(workflow));
     },
-    setParamValue: (id: string, key: string, value: any) => {
-        set({
-            nodes: get().nodes.map((node) => (
-                node.id === id
-                ? {
-                    ...node,
-                    data: {
-                        ...node.data,
-                        params: {
-                            ...node.data.params,
-                            [key]: {
-                                ...node.data.params[key],
+    setParamValue: (nodeId: string, paramName: string, value: any) => {
+        set((state: NodeState) => {
+            const nodes = [...state.nodes];
+            const nodeIndex = nodes.findIndex((n) => n.id === nodeId);
+            if (nodeIndex === -1) return state;
+
+            const currentNode = nodes[nodeIndex];
+            if (!currentNode.data) {
+                currentNode.data = {
+                    module: '',
+                    action: '',
+                    category: '',
+                    params: {}
+                };
+            }
+            if (!currentNode.data.params) {
+                currentNode.data.params = {};
+            }
+            
+            const currentParam = currentNode.data.params[paramName] || {};
+            currentNode.data.params[paramName] = {
+                ...currentParam,
+                value: value
+            };
+            
+            console.log(`Parameter set - Node: ${nodeId}, Param: ${paramName}`, value);
+
+            // Propagate updates to connected nodes
+            const edges = state.edges;
+            edges.forEach(edge => {
+                if (edge.source === nodeId && edge.sourceHandle === paramName) {
+                    const targetNode = nodes.find(n => n.id === edge.target);
+                    if (targetNode && edge.targetHandle) {
+                        // Update the target node's parameter
+                        const targetNodeIndex = nodes.findIndex(n => n.id === edge.target);
+                        if (targetNodeIndex !== -1) {
+                            const targetParam = nodes[targetNodeIndex].data.params[edge.targetHandle] || {};
+                            nodes[targetNodeIndex].data.params[edge.targetHandle] = {
+                                ...targetParam,
                                 value: value
-                            }
+                            };
+                            console.log(`Propagated value to connected node ${edge.target}, param ${edge.targetHandle}:`, value);
                         }
                     }
                 }
-                : node
-            )) // is this real life?
+            });
+
+            return { ...state, nodes };
         });
     },
-    getParam: (id: string, param: string, key: keyof NodeParams) => {
-        const node = get().nodes.find(n => n.id === id);
-        return node?.data.params[param][key];
+    getParam: (nodeId, paramName) => {
+        const state = get();
+        const node = state.nodes.find((n) => n.id === nodeId);
+        if (!node?.data?.params) return null;
+        console.log(`Getting param ${paramName} for node ${nodeId}:`, node.data.params[paramName]);
+        return node.data.params[paramName];
     },
     setNodeExecuted: (id: string, cache: boolean, time: number, memory: number) => {
         set({ nodes: get().nodes.map(node => (node.id === id ? { ...node, data: { ...node.data, cache, time, memory } } : node)) });
@@ -274,6 +340,89 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         };
 
         return graphData;
-    }
+    },
+    initializeNodes: () => {
+        console.log('Running initializeNodes');
+        const customComponents: CustomComponent[] = [
+            {
+                id: nanoid(),
+                type: 'custom',
+                position: { x: 100, y: 100 },
+                data: {
+                    module: 'custom_components',
+                    action: 'MusicKeyboardTracker',
+                    category: 'audio',
+                    label: 'Music Keyboard Tracker',
+                    params: {
+                        component: {
+                            type: 'component',
+                            display: 'component',
+                            value: 'MusicKeyboardTracker',
+                            label: 'Music Keyboard Tracker'
+                        },
+                        timestamps: {
+                            type: 'array',
+                            display: 'output',
+                            label: 'Timestamps'
+                        }
+                    }
+                }
+            },
+            {
+                id: nanoid(),
+                type: 'custom',
+                position: { x: 500, y: 100 },
+                data: {
+                    module: 'custom_components',
+                    action: 'TimestampDisplay',
+                    category: 'display',
+                    label: 'Timestamp Display',
+                    params: {
+                        component: {
+                            type: 'component',
+                            display: 'component',
+                            value: 'TimestampDisplay',
+                            label: 'Timestamp Display'
+                        },
+                        timestamps: {
+                            type: 'array',
+                            display: 'input',
+                            label: 'Timestamps',
+                            value: []
+                        }
+                    }
+                }
+            },
+            {
+                id: nanoid(),
+                type: 'custom',
+                position: { x: 900, y: 100 },
+                data: {
+                    module: 'custom_components',
+                    action: 'AddImagesToTimeline',
+                    category: 'media',
+                    label: 'Timeline Images',
+                    params: {
+                        component: {
+                            type: 'component',
+                            display: 'component',
+                            value: 'AddImagesToTimeline',
+                            label: 'Timeline Images'
+                        },
+                        timestamps: {
+                            type: 'array',
+                            display: 'input',
+                            label: 'Timestamps',
+                            value: []
+                        }
+                    }
+                }
+            }
+        ];
 
+        customComponents.forEach(node => {
+            console.log('Adding node:', node);
+            get().addNode(node);
+        });
+    }
 }));

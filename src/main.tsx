@@ -62,9 +62,7 @@ createRoot(document.getElementById('root')!).render(
           }}>
             <ToolBar />
             <Box sx={{ flex: 1, height: '100%' }}>
-              <WebSocketProvider>
-                <App />          
-              </WebSocketProvider>
+              <App />          
             </Box>
           </Box>
         </Box>

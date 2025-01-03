@@ -54,47 +54,28 @@ const PlainAccordion = styled(Accordion)(({ theme }) => ({
 //     fontSize: '13px',
 //     padding: '4px',
 // }));
-const DynamicComponent = ({ component, props }: { component: string, props: any }) => {
+const DynamicComponent = ({ component, props, nodeId }: { component: string, props: any, nodeId: string }) => {
     const [Component, setComponent] = useState<React.ComponentType<any> | null>(null);
+    console.log('DynamicComponent received nodeId:', nodeId);
 
     useEffect(() => {
-        const script = document.createElement('script');
-
         const loadComponent = async () => {
             try {
-                const url = `http://${config.serverAddress}/custom_component/${component}`;
-                script.src = url;
-                script.async = true;
-
-                (window as any).React = React;
-
-                // Wait for script to load
-                await new Promise((resolve, reject) => {
-                    script.onload = resolve;
-                    script.onerror = reject;
-                    document.body.appendChild(script);
-                });
-
-                const LoadedComponent = (window as any).MyComponent;
-                setComponent(() => LoadedComponent);
+                const module = await import(`../custom_components/${component}.jsx`);
+                setComponent(() => module[component] || module.default);
             } catch (error) {
                 console.error('Error loading component:', error);
             }
         };
 
         loadComponent();
-
-        // Cleanup
-        return () => {
-            document.body.removeChild(script);
-        };
     }, [component]);
 
     if (!Component) {
         return <div>Loading component: {component}...</div>;
     }
 
-    return <Component {...props} />;
+    return <Component {...props} nodeId={nodeId} />;
 };
 
 const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void) => {
@@ -498,8 +479,8 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         props={{
                             ...props,
                             nodeActions,
-                            nodeId,
                         }}
+                        nodeId={nodeId}
                     />
                 </Box>
             );
@@ -554,6 +535,30 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         checked={selected}
                         title={props.label || key}
                         onChange={() => handleChange(!selected)}
+                    />
+                </Box>
+            );
+            break;
+        case 'ui_component':
+            field = (
+                <Box key={key} sx={{ p: 0, m: 0, ...style }} className="nodrag">
+                    <DynamicComponent 
+                        component={props.component} 
+                        props={{
+                            onValueChange: (value: any) => onValueChange(nodeId, key, value)
+                        }} 
+                        nodeId={nodeId}
+                    />
+                </Box>
+            );
+            break;
+        case 'component':
+            field = (
+                <Box key={key}>
+                    <DynamicComponent 
+                        component={props.value} 
+                        props={props.props || {}} 
+                        nodeId={nodeId}
                     />
                 </Box>
             );
@@ -691,6 +696,7 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                 //component="form"
                 //noValidate
                 //autoComplete="off"
+                className="nodrag"
                 sx={{
                     //borderTop: '4px solid rgba(0, 0, 0, 0.2)',
                     backgroundColor: theme.palette.background.paper,
@@ -709,6 +715,7 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
             </Box>
             <Box
                 component="footer"
+                className="nodrag"
                 sx={{
                     padding: 0,
                     backgroundColor: '#121212',
@@ -757,8 +764,8 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                     >
                         <Chip
                             icon={<DeleteForeverIcon />}
-                            label="Cache"
-                            title="Clear Cache"
+                            label="Data"
+                            title="Clear Data"
                             onClick={onClearCache}
                             disabled={!props.data.cache}
                             color="secondary"
@@ -770,36 +777,6 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                                 span: { padding: '0px 8px 0px 10px' },
                                 '& .MuiChip-icon': {
                                     fontSize: '18px',
-                                },
-                            }}
-                        />
-                        {/* <Chip
-                            icon={<MemoryIcon />}
-                            label={props.data.memory ? `${props.data.memory}` : '0Mb'}
-                            title="Memory Usage"
-                            sx={{
-                                color: theme.palette.text.secondary,
-                                height: '24px',
-                                borderRadius: 0.5,
-                                fontSize: '12px',
-                                span: { padding: '0px 8px 0px 10px' },
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                            }}
-                        /> */}
-                        <Chip
-                            icon={<AccessAlarmIcon />}
-                            label={props.data.time ? `${props.data.time}s` : '-'}
-                            title="Execution Time"
-                            sx={{
-                                color: theme.palette.text.secondary,
-                                height: '24px',
-                                borderRadius: 0.5,
-                                fontSize: '12px',
-                                span: { padding: '0px 8px 0px 10px' },
-                                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                '& .MuiChip-icon': {
-                                    fontSize: '18px',
-                                    color: theme.palette.text.secondary,
                                 },
                             }}
                         />
