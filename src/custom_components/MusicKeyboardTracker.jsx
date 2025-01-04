@@ -455,11 +455,29 @@ const MusicKeyboardTracker = ({ nodeId, nodeData }) => {
     if (timelineRef.current && audioRef.current) {
       const timeline = timelineRef.current;
       const duration = audioRef.current.duration;
+      
       const rect = timeline.getBoundingClientRect();
       
-      const clickX = e.clientX - rect.left;
+      // When zoomed out, use simple relative positioning
+      if (zoom <= 1) {
+        const clickX = e.clientX - rect.left;
+        const clickPercent = clickX / rect.width;
+        const newTime = clickPercent * duration;
+        
+        if (newTime >= 0 && newTime <= duration) {
+          setLastHitColor(null);
+          audioRef.current.currentTime = newTime;
+          setCurrentTime(newTime);
+        }
+        return;
+      }
       
-      const clickPercent = clickX / rect.width;
+      // When zoomed in, account for scroll position
+      const container = timeline.parentElement;
+      const scrollLeft = container.scrollLeft;
+      const totalWidth = timeline.offsetWidth;
+      const clickX = e.clientX - rect.left + scrollLeft;
+      const clickPercent = clickX / totalWidth;
       
       const newTime = clickPercent * duration;
       
@@ -497,13 +515,15 @@ const MusicKeyboardTracker = ({ nodeId, nodeData }) => {
     }
   };
 
-  const handleTimelineDragEnd = () => {
+  const handleTimelineDragEnd = (e) => {
     if (!isDraggingTimelineRef.current && timelineRef.current && audioRef.current) {
-      const container = timelineRef.current.parentElement;
+      const timeline = timelineRef.current;
       const duration = audioRef.current.duration;
-      const containerWidth = container.clientWidth;
-      const clickX = initialMousePos.current.x - container.getBoundingClientRect().left;
-      const clickPercent = clickX / containerWidth;
+      
+      // Use timeline's getBoundingClientRect directly instead of container
+      const rect = timeline.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickPercent = clickX / rect.width;
       const newTime = clickPercent * duration;
 
       if (newTime >= 0 && newTime <= duration) {
