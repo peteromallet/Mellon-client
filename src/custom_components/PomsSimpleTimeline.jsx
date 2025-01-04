@@ -39,6 +39,11 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   const [selectedTimestamp, setSelectedTimestamp] = useState(null);
   const [isDeletingTimestamp, setIsDeletingTimestamp] = useState(null);
   const lastManualSelectionRef = useRef(null);
+  const [mousePosition, setMousePosition] = useState(0);
+
+  useEffect(() => {
+    console.log('State changed:', { draggedOver, mousePosition });
+  }, [draggedOver, mousePosition]);
 
   const handleZoom = useCallback((direction) => {
     if (!timelineRef.current?.parentElement || !audioRef.current) return;
@@ -1075,11 +1080,100 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       }}
                       onClick={handleTimelineMouseDown}
                       onMouseDown={handleTimelineDragStart}
+                      onDragOver={(e) => {
+                        if (!isDraggingTimelineRef.current && timelineRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const rect = timelineRef.current.getBoundingClientRect();
+                          const mouseX = e.clientX - rect.left;
+                          const percentageAcross = mouseX / rect.width * 100;
+                          console.log('Timeline DragOver:', {
+                            mouseX,
+                            percentageAcross,
+                            isDraggingTimelineRef: isDraggingTimelineRef.current,
+                            draggedOver
+                          });
+                          setMousePosition(percentageAcross);
+                          setDraggedOver('timeline');
+                        }
+                      }}
+                      onDragEnter={(e) => {
+                        if (!isDraggingTimelineRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const rect = timelineRef.current.getBoundingClientRect();
+                          const mouseX = e.clientX - rect.left;
+                          const percentageAcross = mouseX / rect.width * 100;
+                          console.log('Timeline DragEnter:', {
+                            mouseX,
+                            percentageAcross,
+                            isDraggingTimelineRef: isDraggingTimelineRef.current,
+                            draggedOver
+                          });
+                          setMousePosition(percentageAcross);
+                          setDraggedOver('timeline');
+                        }
+                      }}
+                      onDragLeave={(e) => {
+                        if (!isDraggingTimelineRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const rect = timelineRef.current.getBoundingClientRect();
+                          console.log('Timeline DragLeave:', {
+                            clientX: e.clientX,
+                            clientY: e.clientY,
+                            bounds: {
+                              left: rect.left,
+                              right: rect.right,
+                              top: rect.top,
+                              bottom: rect.bottom
+                            },
+                            draggedOver
+                          });
+                          if (
+                            e.clientX < rect.left ||
+                            e.clientX > rect.right ||
+                            e.clientY < rect.top ||
+                            e.clientY > rect.bottom
+                          ) {
+                            setDraggedOver(null);
+                          }
+                        }
+                      }}
+                      onDrop={(e) => {
+                        if (!isDraggingTimelineRef.current && timelineRef.current && audioRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDraggedOver(null);
+                          
+                          const file = e.dataTransfer.files[0];
+                          if (file && file.type.startsWith('image/')) {
+                            const rect = timelineRef.current.getBoundingClientRect();
+                            const clickX = e.clientX - rect.left;
+                            const duration = audioRef.current.duration || 1;
+                            const clickPercent = clickX / rect.width;
+                            const newTime = (clickPercent * duration).toFixed(4);
+                            
+                            const newTimestamp = { 
+                              id: generateUniqueId(),
+                              time: newTime 
+                            };
+                            
+                            setTimestamps(prev => {
+                              const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
+                              handleImageUpload(file, newTimestamp.id);
+                              return newTimestamps;
+                            });
+                          }
+                        }
+                      }}
                       onMouseMove={(e) => {
                         if (!isDraggingTimelineRef.current && timelineRef.current) {
                           const rect = timelineRef.current.getBoundingClientRect();
                           const mouseX = e.clientX - rect.left;
                           const percentageAcross = mouseX / rect.width * 100;
+                          
+                          setMousePosition(percentageAcross);
                           
                           const hoverButton = document.querySelector('.hover-button');
                           if (hoverButton) {
@@ -1088,6 +1182,35 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                         }
                       }}
                     >
+                      {draggedOver === 'timeline' && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            top: '0',
+                            bottom: '0',
+                            width: '2px',
+                            backgroundColor: 'rgba(255, 165, 0, 0.5)',
+                            zIndex: 99998,
+                            transform: 'translateX(-50%)',
+                            left: `${mousePosition}%`,
+                            pointerEvents: 'none',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            '& > div': {
+                              width: '40px',
+                              height: '60px',
+                              border: '2px solid rgba(255, 165, 0, 0.5)',
+                              borderRadius: '4px',
+                              backgroundColor: 'rgba(255, 165, 0, 0.1)',
+                              marginTop: '40px'
+                            }
+                          }}
+                        >
+                          {console.log('Rendering timeline indicator:', { mousePosition, draggedOver })}
+                          <div />
+                        </Box>
+                      )}
                       <Box 
                         sx={{
                           position: 'absolute',
@@ -1111,7 +1234,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           right: 0,
                           bottom: 0,
                           bgcolor: 'grey.100',
-                          zIndex: 1
+                          zIndex: 0
                         }}
                       />
 
@@ -1282,7 +1405,21 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                   opacity: 0,
                                   visibility: isDragging ? 'hidden' : 'visible',
                                   transition: 'opacity 0.2s, visibility 0.2s'
-                                }
+                                },
+                                ...(draggedOver === stamp.id && {
+                                  '&::before': {
+                                    content: '""',
+                                    position: 'absolute',
+                                    top: '-80px',
+                                    left: '-10px',
+                                    right: '-10px',
+                                    bottom: '-4px',
+                                    border: '2px solid rgba(255, 165, 0, 0.5)',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'rgba(255, 165, 0, 0.1)',
+                                    zIndex: -1
+                                  }
+                                })
                               }}
                               onMouseEnter={(e) => {
                                 if (e.target === e.currentTarget && !isDragging) {
@@ -1298,16 +1435,12 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                               onDragOver={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (!stamp.image) {
-                                  setDraggedOver(stamp.id);
-                                }
+                                setDraggedOver(stamp.id);
                               }}
                               onDragEnter={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (!stamp.image) {
-                                  setDraggedOver(stamp.id);
-                                }
+                                setDraggedOver(stamp.id);
                               }}
                               onDragLeave={(e) => {
                                 e.preventDefault();
@@ -1324,6 +1457,21 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                 }
                               }}
                             >
+                              {draggedOver === stamp.id && (
+                                <Box
+                                  sx={{
+                                    position: 'absolute',
+                                    top: '-80px',
+                                    left: '-10px',
+                                    right: '-10px',
+                                    bottom: '-4px',
+                                    border: '2px solid rgba(255, 165, 0, 0.5)',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'rgba(255, 165, 0, 0.1)',
+                                    zIndex: -1
+                                  }}
+                                />
+                              )}
                               <Box className="upload-hover-area" />
                               {stamp.image && imageUrls[stamp.image] && (
                                 <Box
