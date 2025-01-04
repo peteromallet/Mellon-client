@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useNodeState } from '../stores/nodeStore';
+import { shallow } from 'zustand/shallow';
 
 function SortableItem({ item, index, onRemoveImage, onImageUpload, onTimeChange, prevTime, nextTime }) {
   const {
@@ -223,8 +224,28 @@ function TimelineDivider({ onAddFrame }) {
 
 export function AddImagesToTimeline({ nodeId }) {
   const [timelineData, setTimelineData] = useState([]);
-  const getParam = useNodeState((state) => state.getParam);
-  const setParamValue = useNodeState((state) => state.setParamValue);
+  const { getParam, setParamValue } = useNodeState(
+    (state) => ({
+      getParam: state.getParam,
+      setParamValue: state.setParamValue
+    }),
+    shallow
+  );
+
+  // Subscribe to the node's data and cache status
+  const { nodeData, nodeCache } = useNodeState(
+    (state) => {
+      const node = state.nodes.find(n => n.id === nodeId);
+      return {
+        nodeData: node?.data,
+        nodeCache: node?.data?.cache
+      };
+    },
+    shallow
+  );
+
+  // Define a more appropriate tolerance for timestamp comparisons (0.001 seconds = 1ms)
+  const TIMESTAMP_TOLERANCE = 0.001;
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -265,28 +286,47 @@ export function AddImagesToTimeline({ nodeId }) {
           type: 'timestamp'
         }));
 
-      console.log('Processed timestamps:', timestamps);
-
-      // Merge existing timeline data with new timestamps
       setTimelineData(prevData => {
-        const newData = timestamps.map(timestamp => {
-          const existingEntry = prevData.find(item => 
-            Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp.time)) < Number.EPSILON
-          );
-          return {
-            timestamp: parseFloat(timestamp.time),
-            imageUrl: existingEntry?.imageUrl || null,
-            imageFile: existingEntry?.imageFile || null
-          };
-        });
-        return newData.sort((a, b) => parseFloat(a.timestamp) - parseFloat(b.timestamp));
+        // If we have existing data with images, preserve it and just update timestamps
+        if (prevData.some(item => item.imageUrl || item.imageFile)) {
+          // If we have new timestamps, merge them with existing data
+          if (timestamps.length > 0) {
+            const newData = timestamps.map(timestamp => {
+              const existingEntry = prevData.find(item => 
+                Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp.time)) < TIMESTAMP_TOLERANCE
+              );
+              return {
+                timestamp: parseFloat(timestamp.time),
+                imageUrl: existingEntry?.imageUrl || null,
+                imageFile: existingEntry?.imageFile || null
+              };
+            });
+            return newData.sort((a, b) => parseFloat(a.timestamp) - parseFloat(b.timestamp));
+          }
+          // If no new timestamps but we have images, keep the existing data
+          return prevData;
+        }
+
+        // If no existing images, create new entries from timestamps
+        return timestamps.map(t => ({
+          timestamp: parseFloat(t.time),
+          imageUrl: null,
+          imageFile: null
+        })).sort((a, b) => parseFloat(a.timestamp) - parseFloat(b.timestamp));
       });
     };
 
-    updateTimeline();
+    // Only update if we have nodeId and getParam
+    if (nodeId && getParam) {
+      updateTimeline();
+    }
 
     // Subscribe to store updates
-    const unsubscribe = useNodeState.subscribe(updateTimeline);
+    const unsubscribe = useNodeState.subscribe(() => {
+      if (nodeId && getParam) {
+        updateTimeline();
+      }
+    });
     return () => unsubscribe();
   }, [nodeId, getParam]);
 
@@ -300,7 +340,7 @@ export function AddImagesToTimeline({ nodeId }) {
     // First update the local state to preserve image data
     setTimelineData(prevData => {
       const newData = prevData.map(item =>
-        Math.abs(parseFloat(item.timestamp) - parseFloat(oldTime)) < Number.EPSILON
+        Math.abs(parseFloat(item.timestamp) - parseFloat(oldTime)) < TIMESTAMP_TOLERANCE
           ? { ...item, timestamp: parseFloat(newTime) }
           : item
       );
@@ -327,7 +367,7 @@ export function AddImagesToTimeline({ nodeId }) {
     // Update the timestamps in the node state
     const updatedTimestamps = currentTimestamps
       .map(item => ({
-        time: Math.abs(parseFloat(item.time) - parseFloat(oldTime)) < Number.EPSILON 
+        time: Math.abs(parseFloat(item.time) - parseFloat(oldTime)) < TIMESTAMP_TOLERANCE 
           ? parseFloat(newTime) 
           : parseFloat(item.time),
         type: 'timestamp'
@@ -346,7 +386,7 @@ export function AddImagesToTimeline({ nodeId }) {
       const imageUrl = URL.createObjectURL(file);
       setTimelineData(prevData => 
         prevData.map(item => {
-          const isSameTimestamp = Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp)) < Number.EPSILON;
+          const isSameTimestamp = Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp)) < TIMESTAMP_TOLERANCE;
           return isSameTimestamp
             ? { ...item, imageUrl, imageFile: file }
             : item;
@@ -361,7 +401,7 @@ export function AddImagesToTimeline({ nodeId }) {
     // First update the local state
     setTimelineData(prevData => {
       const newData = prevData.map(item => 
-        Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp)) < Number.EPSILON
+        Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp)) < TIMESTAMP_TOLERANCE
           ? { ...item, imageUrl: null, imageFile: null }
           : item
       );

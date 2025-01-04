@@ -16,6 +16,7 @@ import { createWithEqualityFn } from 'zustand/traditional';
 import { nanoid } from 'nanoid';
 
 import config from '../../config';
+import { dataService } from '../services/dataService';
 
 type NodeParams = {
     type?: string | string[];
@@ -45,6 +46,7 @@ type NodeData = {
     label?: string;
     description?: string;
     style?: { [key: string]: string };
+    files?: string[];
 };
 
 type StoredWorkflow = {
@@ -155,6 +157,9 @@ export type NodeState = {
     setNodeExecuted: (id: string, cache: boolean, time: number, memory: number) => void;
     exportGraph: (sid: string) => GraphExport;
     initializeNodes: () => void;
+    deleteNodeData: (nodeId: string) => Promise<void>;
+    loadNodeData: (nodeId: string) => Promise<void>;
+    saveNodeData: (nodeId: string) => Promise<void>;
 };
 
 interface NodeStore {
@@ -212,35 +217,24 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
             const sourceParam = sourceNode.data.params[conn.sourceHandle];
             console.log('Source param to transfer:', sourceParam);
             
-            // Update the target node with the source value
-            if (sourceParam?.value !== undefined) {
-                get().setParamValue(targetNode.id, conn.targetHandle, sourceParam.value);
-            }
-
-            // Store the connection info for future updates
-            const sourceHandle = conn.sourceHandle;
-            const targetHandle = conn.targetHandle;
-            
+            // First state update - update target node's parameter value
             set((state: NodeState) => {
                 const updatedNodes = state.nodes.map(node => {
-                    if (node.id === sourceNode.id) {
-                        const currentParams = node.data.params[sourceHandle] || {};
-                        const currentConnections = currentParams.connections || [];
-                        
+                    if (node.id === targetNode.id) {
+                        const targetHandle = conn.targetHandle as string;
+                        const updatedParams = {
+                            ...node.data.params,
+                            [targetHandle]: {
+                                ...node.data.params[targetHandle],
+                                value: sourceParam?.value
+                            }
+                        };
+
                         return {
                             ...node,
                             data: {
                                 ...node.data,
-                                params: {
-                                    ...node.data.params,
-                                    [sourceHandle]: {
-                                        ...currentParams,
-                                        connections: [
-                                            ...currentConnections,
-                                            { targetId: targetNode.id, targetParam: targetHandle }
-                                        ]
-                                    }
-                                }
+                                params: updatedParams
                             }
                         };
                     }
@@ -248,70 +242,156 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 });
                 return { ...state, nodes: updatedNodes };
             });
-        }
-    },
-    addNode: (node: CustomNodeType) => {
-        if (node.data?.params) {
-            Object.keys(node.data.params).forEach(key => {
-                const param = node.data.params[key];
-                node.data.params[key] = {
-                    ...param,
-                    value: param.value ?? param.default
-                };
-            });
-        }
-        const newNodes = [...get().nodes, node];
-        set({ nodes: newNodes });
-    },
-    setParamValue: (nodeId: string, paramName: string, value: any) => {
-        set((state: NodeState) => {
-            const nodes = [...state.nodes];
-            const nodeIndex = nodes.findIndex((n) => n.id === nodeId);
-            if (nodeIndex === -1) return state;
 
-            const currentNode = nodes[nodeIndex];
-            if (!currentNode.data) {
-                currentNode.data = {
-                    module: '',
-                    action: '',
-                    category: '',
-                    params: {}
-                };
-            }
-            if (!currentNode.data.params) {
-                currentNode.data.params = {};
-            }
-            
-            const currentParam = currentNode.data.params[paramName] || {};
-            currentNode.data.params[paramName] = {
-                ...currentParam,
-                value: value
-            };
-            
-            console.log(`Parameter set - Node: ${nodeId}, Param: ${paramName}`, value);
+            // Second state update - store connection info in source node
+            set((state: NodeState) => {
+                const updatedNodes = state.nodes.map(node => {
+                    if (node.id === sourceNode.id && conn.targetHandle) {
+                        const sourceHandle = conn.sourceHandle as string;
+                        const currentParams = node.data.params[sourceHandle] || {};
+                        const currentConnections = currentParams.connections || [];
+                        
+                        const updatedParams = {
+                            ...node.data.params,
+                            [sourceHandle]: {
+                                ...currentParams,
+                                connections: [
+                                    ...currentConnections,
+                                    { targetId: targetNode.id, targetParam: conn.targetHandle }
+                                ]
+                            }
+                        } as NodeData['params'];
 
-            // Propagate updates to connected nodes
-            const edges = state.edges;
-            edges.forEach(edge => {
-                if (edge.source === nodeId && edge.sourceHandle === paramName) {
-                    const targetNode = nodes.find(n => n.id === edge.target);
-                    if (targetNode && edge.targetHandle) {
-                        // Update the target node's parameter
-                        const targetNodeIndex = nodes.findIndex(n => n.id === edge.target);
-                        if (targetNodeIndex !== -1) {
-                            const targetParam = nodes[targetNodeIndex].data.params[edge.targetHandle] || {};
-                            nodes[targetNodeIndex].data.params[edge.targetHandle] = {
-                                ...targetParam,
-                                value: value
-                            };
-                            console.log(`Propagated value to connected node ${edge.target}, param ${edge.targetHandle}:`, value);
-                        }
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                params: updatedParams
+                            }
+                        };
                     }
-                }
+                    return node;
+                });
+                return { ...state, nodes: updatedNodes };
             });
 
-            return { ...state, nodes };
+            // Save both nodes' data after all state updates are complete
+            get().saveNodeData(targetNode.id);
+            get().saveNodeData(sourceNode.id);
+        }
+    },
+    addNode: async (node: CustomNodeType) => {
+        set((state: NodeState) => {
+            const newNodes = [...state.nodes, node];
+            return { ...state, nodes: newNodes };
         });
+
+        // Load any existing data for this node
+        try {
+            const nodeData = await dataService.loadNodeData(node.id);
+            if (nodeData?.params) {
+                // Update the node with persisted data
+                set((state: NodeState) => ({
+                    ...state,
+                    nodes: state.nodes.map(n => {
+                        if (n.id === node.id) {
+                            return {
+                                ...n,
+                                data: {
+                                    ...n.data,
+                                    params: Object.fromEntries(
+                                        Object.entries(n.data.params).map(([key, param]) => [
+                                            key,
+                                            {
+                                                ...param,
+                                                value: nodeData.params[key]?.value ?? param.value ?? param.default
+                                            }
+                                        ])
+                                    ),
+                                    cache: nodeData.cache,
+                                    time: nodeData.time,
+                                    memory: nodeData.memory
+                                }
+                            };
+                        }
+                        return n;
+                    })
+                }));
+            }
+        } catch (error) {
+            console.error(`Error loading persisted data for node ${node.id}:`, error);
+        }
+    },
+    setParamValue: async (nodeId: string, paramName: string, value: any) => {
+        let updatedNodes: CustomNodeType[] = [];
+        
+        // First update the source node and collect nodes that need updating
+        set((state: NodeState) => {
+            updatedNodes = state.nodes.map(node => {
+                if (node.id === nodeId) {
+                    // Update the source node
+                    const currentParam = node.data.params[paramName];
+                    const connections = currentParam?.connections || [];
+                    
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            params: {
+                                ...node.data.params,
+                                [paramName]: {
+                                    ...node.data.params[paramName],
+                                    value
+                                }
+                            }
+                        }
+                    };
+                }
+                return node;
+            });
+            return { ...state, nodes: updatedNodes };
+        });
+
+        // Find the source node and its connections after the state update
+        const sourceNode = updatedNodes.find(n => n.id === nodeId);
+        const connections = sourceNode?.data.params[paramName]?.connections;
+        
+        // Update all connected target nodes if there are connections
+        if (connections?.length) {
+            // Update all connected target nodes
+            set((state: NodeState) => {
+                const nodesWithPropagatedValues = state.nodes.map(node => {
+                    // Check if this node is a target of the source parameter
+                    const connection = connections.find(conn => conn.targetId === node.id);
+                    if (connection) {
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                params: {
+                                    ...node.data.params,
+                                    [connection.targetParam]: {
+                                        ...node.data.params[connection.targetParam],
+                                        value
+                                    }
+                                }
+                            }
+                        };
+                    }
+                    return node;
+                });
+                return { ...state, nodes: nodesWithPropagatedValues };
+            });
+
+            // Save source node data and all connected target nodes' data
+            await get().saveNodeData(nodeId);
+            for (const conn of connections) {
+                await get().saveNodeData(conn.targetId);
+            }
+        } else {
+            // If no connections, just save the source node
+            await get().saveNodeData(nodeId);
+        }
     },
     getParam: (nodeId, paramName) => {
         const state = get();
@@ -321,7 +401,23 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         return node.data.params[paramName];
     },
     setNodeExecuted: (id: string, cache: boolean, time: number, memory: number) => {
-        set({ nodes: get().nodes.map(node => (node.id === id ? { ...node, data: { ...node.data, cache, time, memory } } : node)) });
+        set((state: NodeState) => {
+            const updatedNodes = state.nodes.map(node => {
+                if (node.id === id) {
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            cache,
+                            time,
+                            memory
+                        }
+                    };
+                }
+                return node;
+            });
+            return { ...state, nodes: updatedNodes };
+        });
     },
     exportGraph: (sid: string) => {
         const { nodes, edges } = get();
@@ -341,11 +437,11 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
 
         return graphData;
     },
-    initializeNodes: () => {
+    initializeNodes: async () => {
         console.log('Running initializeNodes');
         const customComponents: CustomComponent[] = [
             {
-                id: nanoid(),
+                id: 'music-keyboard-tracker',
                 type: 'custom',
                 position: { x: 100, y: 100 },
                 data: {
@@ -369,7 +465,7 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 }
             },
             {
-                id: nanoid(),
+                id: 'timestamp-display',
                 type: 'custom',
                 position: { x: 500, y: 100 },
                 data: {
@@ -394,7 +490,7 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 }
             },
             {
-                id: nanoid(),
+                id: 'timeline-images',
                 type: 'custom',
                 position: { x: 900, y: 100 },
                 data: {
@@ -420,9 +516,159 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
             }
         ];
 
-        customComponents.forEach(node => {
-            console.log('Adding node:', node);
-            get().addNode(node);
+        // Get existing nodes to preserve their data
+        const existingNodes = get().nodes;
+
+        // Load persisted data for all nodes before adding them
+        const nodesWithData = await Promise.all(customComponents.map(async (node) => {
+            // Check if we have an existing node with this ID
+            const existingNode = existingNodes.find(n => n.id === node.id);
+            if (existingNode) {
+                console.log('Preserving existing node data for:', node.id);
+                return existingNode;
+            }
+
+            try {
+                const nodeData = await dataService.loadNodeData(node.id);
+                if (nodeData) {
+                    const updatedParams = Object.fromEntries(
+                        Object.entries(node.data.params).map(([key, param]) => {
+                            const paramValue = nodeData.params[key];
+                            return [
+                                key,
+                                {
+                                    ...param,
+                                    value: key === 'timestamps' && Array.isArray(paramValue) ? paramValue : 
+                                           paramValue !== undefined ? paramValue : param.value ?? param.default
+                                }
+                            ];
+                        })
+                    ) as NodeData['params'];
+
+                    const updatedData: NodeData = {
+                        ...node.data,
+                        params: updatedParams,
+                        cache: nodeData.cache ?? false,
+                        time: nodeData.time ?? 0,
+                        memory: nodeData.memory ?? 0,
+                        files: nodeData.files ?? []
+                    };
+
+                    return {
+                        ...node,
+                        data: updatedData
+                    };
+                }
+            } catch (error) {
+                console.error(`Error loading persisted data for node ${node.id}:`, error);
+            }
+            return node;
+        }));
+
+        // Add all nodes with their persisted data in a single update
+        set((state: NodeState) => ({
+            ...state,
+            nodes: [...state.nodes, ...nodesWithData]
+        }));
+    },
+    deleteNodeData: async (nodeId: string) => {
+        await dataService.deleteNodeData(nodeId);
+        set((state: NodeState) => {
+            const updatedNodes = state.nodes.map(node => {
+                if (node.id === nodeId) {
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            params: Object.fromEntries(
+                                Object.entries(node.data.params).map(([key, param]) => [
+                                    key,
+                                    {
+                                        ...param,
+                                        value: param.default
+                                    }
+                                ])
+                            ) as NodeData['params'],
+                            cache: false,
+                            time: 0,
+                            memory: 0,
+                            files: []  // Reset files array when deleting data
+                        }
+                    };
+                }
+                return node;
+            });
+            return { ...state, nodes: updatedNodes };
         });
+    },
+    loadNodeData: async (nodeId: string) => {
+        const data = await dataService.loadNodeData(nodeId);
+        if (data) {
+            set((state: NodeState) => {
+                const updatedNodes = state.nodes.map(node => {
+                    if (node.id === nodeId) {
+                        const updatedParams = Object.fromEntries(
+                            Object.entries(node.data.params).map(([key, param]) => [
+                                key,
+                                {
+                                    ...param,
+                                    value: key === 'timestamps' && Array.isArray(data.params[key]) ? data.params[key] :
+                                           data.params[key] !== undefined ? data.params[key] : param.value ?? param.default
+                                }
+                            ])
+                        ) as NodeData['params'];
+
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                params: updatedParams,
+                                cache: data.cache ?? false,
+                                time: data.time ?? 0,
+                                memory: data.memory ?? 0,
+                                files: data.files ?? []
+                            }
+                        };
+                    }
+                    return node;
+                });
+                return { ...state, nodes: updatedNodes };
+            });
+        }
+    },
+    saveNodeData: async (nodeId: string) => {
+        const node = get().nodes.find(n => n.id === nodeId);
+        if (node) {
+            try {
+                // Load existing data to preserve files field
+                const existingData = await dataService.loadNodeData(nodeId);
+                
+                const data = {
+                    params: Object.fromEntries(
+                        Object.entries(node.data.params).map(([key, param]) => [
+                            key,
+                            param.value
+                        ])
+                    ),
+                    files: existingData?.files ?? node.data.files ?? [],
+                    cache: true,  // Always set cache to true when saving data
+                    time: node.data.time ?? 0,
+                    memory: node.data.memory ?? 0
+                };
+                
+                await dataService.saveNodeData(nodeId, data);
+                
+                // Update the local node state to reflect the cache status
+                set((state: NodeState) => ({
+                    nodes: state.nodes.map(n => 
+                        n.id === nodeId 
+                            ? { ...n, data: { ...n.data, cache: true } }
+                            : n
+                    )
+                }));
+            } catch (error) {
+                console.error(`Error saving data for node ${nodeId}:`, error);
+            }
+        }
     }
 }));

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   ReactFlow,
   Controls,
@@ -8,7 +8,8 @@ import {
   useReactFlow,
   Connection,
   IsValidConnection,
-  Viewport
+  Viewport,
+  Edge
 } from '@xyflow/react';
 import { shallow } from 'zustand/shallow';
 import { useNodeState, NodeState, CustomNodeType } from './stores/nodeStore';
@@ -40,12 +41,30 @@ const connectionLineStyle = { strokeWidth: 3, strokeDasharray: '8,8' };
 const defaultEdgeOptions = { style: { ...connectionLineStyle, strokeDasharray: 'none' } };
 
 export default function App() {
-  const { nodes, edges, onNodesChange, onEdgesChange, onEdgeDoubleClick, onConnect, addNode, getParam, initializeNodes } = useNodeState(selectNodeState, shallow);
-  const { screenToFlowPosition, setNodes, setEdges, setViewport } = useReactFlow();
+  const { nodes, edges, onNodesChange, onEdgesChange, onEdgeDoubleClick, onConnect, initializeNodes } = useNodeState(selectNodeState, shallow);
+  const { setViewport } = useReactFlow();
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    console.log('App mounted, initializing nodes');
+    const init = async () => {
+      await initializeNodes();
+      setIsInitialized(true);
+    };
+    init();
+  }, [initializeNodes]);
 
   const onMoveEnd = (_: MouseEvent | TouchEvent | null, viewport: Viewport) => {
     // Optional: Add any viewport change handling here if needed
   };
+
+  const handleEdgeDoubleClick = (_: React.MouseEvent, edge: Edge) => {
+    onEdgeDoubleClick(edge.id);
+  };
+
+  if (!isInitialized) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <ReactFlow
@@ -53,7 +72,7 @@ export default function App() {
       edges={edges}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      onEdgeDoubleClick={onEdgeDoubleClick}
+      onEdgeDoubleClick={handleEdgeDoubleClick}
       onConnect={onConnect}
       onMoveEnd={onMoveEnd}
       nodeTypes={nodeTypes}

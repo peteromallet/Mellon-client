@@ -56,7 +56,10 @@ const PlainAccordion = styled(Accordion)(({ theme }) => ({
 // }));
 const DynamicComponent = ({ component, props, nodeId }: { component: string, props: any, nodeId: string }) => {
     const [Component, setComponent] = useState<React.ComponentType<any> | null>(null);
-    console.log('DynamicComponent received nodeId:', nodeId);
+    const nodeData = useNodeState(
+        (state) => state.nodes.find(n => n.id === nodeId)?.data,
+        shallow
+    );
 
     useEffect(() => {
         const loadComponent = async () => {
@@ -75,7 +78,7 @@ const DynamicComponent = ({ component, props, nodeId }: { component: string, pro
         return <div>Loading component: {component}...</div>;
     }
 
-    return <Component {...props} nodeId={nodeId} />;
+    return <Component {...props} nodeId={nodeId} nodeData={nodeData} />;
 };
 
 const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void) => {
@@ -589,42 +592,42 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
 
 const CustomNode = (props: NodeProps<CustomNodeType>) => {
     const theme = useTheme();
-    const { setParamValue, setNodeExecuted } = useNodeState((state: NodeState) => ({
+    const { setParamValue, setNodeExecuted, deleteNodeData, loadNodeData } = useNodeState((state: NodeState) => ({
         setParamValue: state.setParamValue,
-        setNodeExecuted: state.setNodeExecuted
+        setNodeExecuted: state.setNodeExecuted,
+        deleteNodeData: state.deleteNodeData,
+        loadNodeData: state.loadNodeData
     }), shallow);
+
+    // Subscribe to the full node data to ensure re-render when params change
+    const nodeData = useNodeState(
+        (state) => state.nodes.find(n => n.id === props.id)?.data,
+        shallow
+    );
+
+    // Add a separate selector for cache status to ensure re-render
+    const cache = useNodeState(
+        (state) => state.nodes.find(n => n.id === props.id)?.data?.cache,
+        shallow
+    );
 
     const nodeProgress = useWebsocketState(
         (state) => state.nodeProgress[props.id] || { value: 0, type: 'determinate' },
         shallow
     );
 
-    //const onValueChange = (nodeId: string, key: string, value: any) => {
-    //    setParamValue(nodeId, key, value);
-    //}
     const onClearCache = async () => {
-        const nodeId = props.id;
-
         try {
-            const response = await fetch('http://' + config.serverAddress + '/clearNodeCache', {
-                method: 'DELETE',
-                body: JSON.stringify({ nodeId }),
-            });
-
-            if (response.ok) {
-                setNodeExecuted(nodeId, false, 0, 0);
-            }
+            await deleteNodeData(props.id);
+            // Set node as not executed
+            setNodeExecuted(props.id, false, 0, 0);
         } catch (error) {
-            console.error('Error clearing cache:', error);
+            console.error('Error clearing node data:', error);
         }
-    }
+    };
 
-    // Group fields by data.params.group. Convert group from:
-    // 'seed': { ... }, 'width': { ... group: 'dimensions' }, 'height': { ... group: 'dimensions' }
-    // To:
-    // 'seed': { ... }, 'dimensions_group': { ... , 'params': { 'width': { ... }, 'height': { ... } } }
-    // This complication is done to keep all fields on the same level and avoid nested objects
-    const groupedParams = Object.entries(props.data.params).reduce((acc: any, [key, data]) => {
+    // Group fields by data.params.group using the live nodeData instead of props
+    const groupedParams = Object.entries(nodeData?.params || {}).reduce((acc: any, [key, data]) => {
         let group = undefined;
 
         if (data.group) {
@@ -767,7 +770,7 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                             label="Data"
                             title="Clear Data"
                             onClick={onClearCache}
-                            disabled={!props.data.cache}
+                            disabled={!cache}
                             color="secondary"
                             variant="filled"
                             sx={{

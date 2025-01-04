@@ -4,7 +4,8 @@ import { useTheme } from '@mui/material/styles'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import { shallow } from 'zustand/shallow'
-import { useNodeState } from '../stores/nodeStore'
+import { useNodeState, CustomNodeType } from '../stores/nodeStore'
+import { nanoid } from 'nanoid'
 
 // Icons
 import SaveIcon from '@mui/icons-material/Save';
@@ -12,7 +13,7 @@ import AddIcon from '@mui/icons-material/Add';
 
 export default function AppToolbar() {
   const { setNodes, setEdges, toObject, setViewport } = useReactFlow();
-  const { initializeNodes } = useNodeState(state => ({ initializeNodes: state.initializeNodes }), shallow);
+  const { addNode } = useNodeState(state => ({ addNode: state.addNode }), shallow);
   const theme = useTheme();
 
   const onExport = useCallback(() => {
@@ -31,8 +32,32 @@ export default function AppToolbar() {
 
   const onAddNode = useCallback(() => {
     console.log('Adding new node');
-    initializeNodes();
-  }, [initializeNodes]);
+    const newNode: CustomNodeType = {
+      id: `music-keyboard-tracker-${nanoid(6)}`,
+      type: 'custom',
+      position: { x: 100, y: 100 },
+      data: {
+        module: 'custom_components',
+        action: 'MusicKeyboardTracker',
+        category: 'audio',
+        label: 'Music Keyboard Tracker',
+        params: {
+          component: {
+            type: 'component',
+            display: 'component',
+            value: 'MusicKeyboardTracker',
+            label: 'Music Keyboard Tracker'
+          },
+          timestamps: {
+            type: 'array',
+            display: 'output',
+            label: 'Timestamps'
+          }
+        }
+      }
+    };
+    addNode(newNode);
+  }, [addNode]);
 
   return (
     <Box sx={{
