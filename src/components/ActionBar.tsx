@@ -33,20 +33,20 @@ export default function AppToolbar() {
   const onAddNode = useCallback(() => {
     console.log('Adding new node');
     const newNode: CustomNodeType = {
-      id: `music-keyboard-tracker-${nanoid(6)}`,
+      id: `poms-simple-timeline-${nanoid(6)}`,
       type: 'custom',
       position: { x: 100, y: 100 },
       data: {
         module: 'custom_components',
-        action: 'MusicKeyboardTracker',
+        action: 'PomsSimpleTimeline',
         category: 'audio',
-        label: 'Music Keyboard Tracker',
+        label: 'POM\'s Simple Timeline',
         params: {
           component: {
             type: 'component',
             display: 'component',
-            value: 'MusicKeyboardTracker',
-            label: 'Music Keyboard Tracker'
+            value: 'PomsSimpleTimeline',
+            label: 'POM\'s Simple Timeline'
           },
           timestamps: {
             type: 'array',

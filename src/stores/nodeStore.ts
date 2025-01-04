@@ -441,20 +441,20 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         console.log('Running initializeNodes');
         const customComponents: CustomComponent[] = [
             {
-                id: 'music-keyboard-tracker',
+                id: 'poms-simple-timeline',
                 type: 'custom',
                 position: { x: 100, y: 100 },
                 data: {
                     module: 'custom_components',
-                    action: 'MusicKeyboardTracker',
+                    action: 'PomsSimpleTimeline',
                     category: 'audio',
-                    label: 'Music Keyboard Tracker',
+                    label: 'POM\'s Simple Timeline',
                     params: {
                         component: {
                             type: 'component',
                             display: 'component',
-                            value: 'MusicKeyboardTracker',
-                            label: 'Music Keyboard Tracker'
+                            value: 'PomsSimpleTimeline',
+                            label: 'POM\'s Simple Timeline'
                         },
                         timestamps: {
                             type: 'array',
