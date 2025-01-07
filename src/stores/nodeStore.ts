@@ -53,7 +53,7 @@ type StoredWorkflow = {
     nodes: CustomNodeType[];
     edges: Edge[];
     viewport?: { x: number; y: number; zoom: number };
-  };
+};
 
 export type CustomNodeType = Node<NodeData, 'custom'>;
 
@@ -364,6 +364,10 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                     // Check if this node is a target of the source parameter
                     const connection = connections.find(conn => conn.targetId === node.id);
                     if (connection) {
+                        // Get the target parameter
+                        const targetParam = node.data.params[connection.targetParam];
+                        
+                        // Use the new value directly - we're already handling array merging in the ImageGenerator
                         return {
                             ...node,
                             data: {
@@ -441,6 +445,30 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
         console.log('Running initializeNodes');
         const customComponents: CustomComponent[] = [
             {
+                id: 'prompt-list',
+                type: 'custom',
+                position: { x: 100, y: 300 },
+                data: {
+                    module: 'text',
+                    action: 'input',
+                    category: 'input',
+                    label: "POM's Prompt List",
+                    params: {
+                        component: {
+                            type: 'component',
+                            display: 'component',
+                            value: 'PromptList',
+                            label: "POM's Prompt List"
+                        },
+                        prompts: {
+                            type: 'array',
+                            display: 'output',
+                            label: 'Prompts'
+                        }
+                    }
+                }
+            },
+            {
                 id: 'poms-simple-timeline',
                 type: 'custom',
                 position: { x: 100, y: 100 },
@@ -459,57 +487,74 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                         timestamps: {
                             type: 'array',
                             display: 'output',
-                            label: 'Timestamps'
+                            label: 'Timeline'
                         }
                     }
                 }
             },
             {
-                id: 'timestamp-display',
+                id: 'image-generator',
                 type: 'custom',
-                position: { x: 500, y: 100 },
+                position: { x: 100, y: 500 },
                 data: {
-                    module: 'custom_components',
-                    action: 'TimestampDisplay',
+                    module: 'image',
+                    action: 'generate',
+                    category: 'generation',
+                    label: 'POM\'s Simple Image Generator',
+                    params: {
+                        component: {
+                            type: 'component',
+                            display: 'component',
+                            value: 'ImageGenerator',
+                            label: 'POM\'s Simple Image Generator'
+                        },
+                        prompt: {
+                            type: 'string',
+                            display: 'hidden',
+                            label: 'Prompt'
+                        },
+                        workflow: {
+                            type: 'string',
+                            label: 'Workflow',
+                            options: ['Flux General'],
+                            default: 'Flux General'
+                        },
+                        number: {
+                            type: 'number',
+                            display: 'hidden',
+                            label: 'Number of Images',
+                            min: 1,
+                            max: 12,
+                            default: 1
+                        },
+                        output: {
+                            type: 'array',
+                            display: 'output',
+                            label: 'Generated Images'
+                        }
+                    }
+                }
+            },
+            {
+                id: 'image-gallery',
+                type: 'custom',
+                position: { x: 500, y: 500 },
+                data: {
+                    module: 'image',
+                    action: 'display',
                     category: 'display',
-                    label: 'Timestamp Display',
+                    label: 'POM\'s Simple Gallery',
                     params: {
                         component: {
                             type: 'component',
                             display: 'component',
-                            value: 'TimestampDisplay',
-                            label: 'Timestamp Display'
+                            value: 'ImageGallery',
+                            label: 'POM\'s Simple Gallery'
                         },
-                        timestamps: {
+                        input: {
                             type: 'array',
                             display: 'input',
-                            label: 'Timestamps',
-                            value: []
-                        }
-                    }
-                }
-            },
-            {
-                id: 'timeline-images',
-                type: 'custom',
-                position: { x: 900, y: 100 },
-                data: {
-                    module: 'custom_components',
-                    action: 'AddImagesToTimeline',
-                    category: 'media',
-                    label: 'Timeline Images',
-                    params: {
-                        component: {
-                            type: 'component',
-                            display: 'component',
-                            value: 'AddImagesToTimeline',
-                            label: 'Timeline Images'
-                        },
-                        timestamps: {
-                            type: 'array',
-                            display: 'input',
-                            label: 'Timestamps',
-                            value: []
+                            label: 'Images'
                         }
                     }
                 }

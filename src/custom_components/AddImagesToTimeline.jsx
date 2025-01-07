@@ -20,7 +20,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useNodeState } from '../stores/nodeStore';
-import { shallow } from 'zustand/shallow';
 
 function SortableItem({ item, index, onRemoveImage, onImageUpload, onTimeChange, prevTime, nextTime }) {
   const {
@@ -79,8 +78,8 @@ function SortableItem({ item, index, onRemoveImage, onImageUpload, onTimeChange,
               src={item.imageUrl}
               alt={`Timeline ${item.timestamp}`}
               style={{
-                width: '180px',
-                height: '120px',
+                width: '115px',
+                height: '115px',
                 objectFit: 'cover',
                 borderRadius: '4px'
               }}
@@ -224,25 +223,8 @@ function TimelineDivider({ onAddFrame }) {
 
 export function AddImagesToTimeline({ nodeId }) {
   const [timelineData, setTimelineData] = useState([]);
-  const { getParam, setParamValue } = useNodeState(
-    (state) => ({
-      getParam: state.getParam,
-      setParamValue: state.setParamValue
-    }),
-    shallow
-  );
-
-  // Subscribe to the node's data and cache status
-  const { nodeData, nodeCache } = useNodeState(
-    (state) => {
-      const node = state.nodes.find(n => n.id === nodeId);
-      return {
-        nodeData: node?.data,
-        nodeCache: node?.data?.cache
-      };
-    },
-    shallow
-  );
+  const getParam = useNodeState((state) => state.getParam);
+  const setParamValue = useNodeState((state) => state.setParamValue);
 
   // Define a more appropriate tolerance for timestamp comparisons (0.001 seconds = 1ms)
   const TIMESTAMP_TOLERANCE = 0.001;
@@ -286,47 +268,28 @@ export function AddImagesToTimeline({ nodeId }) {
           type: 'timestamp'
         }));
 
-      setTimelineData(prevData => {
-        // If we have existing data with images, preserve it and just update timestamps
-        if (prevData.some(item => item.imageUrl || item.imageFile)) {
-          // If we have new timestamps, merge them with existing data
-          if (timestamps.length > 0) {
-            const newData = timestamps.map(timestamp => {
-              const existingEntry = prevData.find(item => 
-                Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp.time)) < TIMESTAMP_TOLERANCE
-              );
-              return {
-                timestamp: parseFloat(timestamp.time),
-                imageUrl: existingEntry?.imageUrl || null,
-                imageFile: existingEntry?.imageFile || null
-              };
-            });
-            return newData.sort((a, b) => parseFloat(a.timestamp) - parseFloat(b.timestamp));
-          }
-          // If no new timestamps but we have images, keep the existing data
-          return prevData;
-        }
+      console.log('Processed timestamps:', timestamps);
 
-        // If no existing images, create new entries from timestamps
-        return timestamps.map(t => ({
-          timestamp: parseFloat(t.time),
-          imageUrl: null,
-          imageFile: null
-        })).sort((a, b) => parseFloat(a.timestamp) - parseFloat(b.timestamp));
+      // Merge existing timeline data with new timestamps
+      setTimelineData(prevData => {
+        const newData = timestamps.map(timestamp => {
+          const existingEntry = prevData.find(item => 
+            Math.abs(parseFloat(item.timestamp) - parseFloat(timestamp.time)) < TIMESTAMP_TOLERANCE
+          );
+          return {
+            timestamp: parseFloat(timestamp.time),
+            imageUrl: existingEntry?.imageUrl || null,
+            imageFile: existingEntry?.imageFile || null
+          };
+        });
+        return newData.sort((a, b) => parseFloat(a.timestamp) - parseFloat(b.timestamp));
       });
     };
 
-    // Only update if we have nodeId and getParam
-    if (nodeId && getParam) {
-      updateTimeline();
-    }
+    updateTimeline();
 
     // Subscribe to store updates
-    const unsubscribe = useNodeState.subscribe(() => {
-      if (nodeId && getParam) {
-        updateTimeline();
-      }
-    });
+    const unsubscribe = useNodeState.subscribe(updateTimeline);
     return () => unsubscribe();
   }, [nodeId, getParam]);
 

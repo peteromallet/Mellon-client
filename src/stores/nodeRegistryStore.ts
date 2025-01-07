@@ -1,5 +1,6 @@
 import { createWithEqualityFn } from 'zustand/traditional';
 import config from '../../config';
+import { customNodes } from '../nodeRegistry';
 
 type NodeType = {
     [key: string]: {
@@ -7,6 +8,7 @@ type NodeType = {
         module: string
         action: string
         category: string
+        type?: string
         params?: { [key: string]: any }
         output?: { [key: string]: any }
         ui?: { [key: string]: any }
@@ -19,14 +21,16 @@ export type NodeRegistryState = {
 }
 
 export const useNodeRegistryState = createWithEqualityFn<NodeRegistryState>((set) => ({
-    nodeRegistry: {},
+    nodeRegistry: customNodes,
     updateNodeRegistry: async () => {
         try {
             const response = await fetch('http://' + config.serverAddress + '/nodes')
             const data = await response.json()
-            set({ nodeRegistry: data })
+            set({ nodeRegistry: { ...data, ...customNodes } })
         } catch (error) {
             console.error('Can\'t connect to route `/nodes`', error)
+            // Still set the custom nodes even if server is not available
+            set({ nodeRegistry: customNodes })
         }
     },
 }))

@@ -1,23 +1,17 @@
 import { useMemo, useState } from 'react'
-
 import Box from '@mui/material/Box'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
-//import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
-
-//import ToggleButton from '@mui/material/ToggleButton'
-//import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
-//import Stack from '@mui/material/Stack'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import { useTheme } from '@mui/material/styles'
-
-import { shallow } from 'zustand/shallow';
-import { NodeRegistryState, useNodeRegistryState } from '../stores/nodeRegistryStore';
-
+import { shallow } from 'zustand/shallow'
+import { NodeRegistryState, useNodeRegistryState } from '../stores/nodeRegistryStore'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import SearchIcon from '@mui/icons-material/Search'
 import Accordion from '@mui/material/Accordion'
@@ -40,7 +34,6 @@ const groupBy = (field: string, nodeRegistry: any) => {
   }, {});
 
   if (field !== 'module') {
-    // Sort nodes within each module alphabetically by label
     Object.keys(grouped).forEach(module => {
       grouped[module].sort((a: any, b: any) => 
         (a.label || a.key).localeCompare(b.label || b.key)
@@ -48,7 +41,6 @@ const groupBy = (field: string, nodeRegistry: any) => {
     });
   }
 
-  // Return as sorted object with sorted module names
   return Object.fromEntries(
     Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
   );
@@ -58,7 +50,15 @@ export default function LeftSidebar() {
   const theme = useTheme()
   const { nodeRegistry } = useNodeRegistryState(selectNodeRegistryState, shallow);
 
-  // Local node search state, the code will hide the nodes that don't match the search term instead of removing them from the DOM
+  // View mode state
+  const [viewMode, setViewMode] = useState('workflow');
+  const handleViewModeChange = (_: any, newMode: string) => {
+    if (newMode !== null) {
+      setViewMode(newMode);
+    }
+  };
+
+  // Local node search state
   const [searchTerm, setSearchTerm] = useState('')
   const filteredNodes = useMemo(() => {
     const searchTerms = searchTerm.toLowerCase().split(/\s+/).filter(term => term.length > 0);
@@ -83,10 +83,8 @@ export default function LeftSidebar() {
   };
 
   const groupedNodes = useMemo(() => {
-    // First get the base grouped nodes
     const grouped = tabValue === 0 ? groupBy('module', nodeRegistry) : groupBy('category', nodeRegistry);
 
-    // If there's a search filter, only include nodes that match
     if (filteredNodes) {
       return Object.fromEntries(
         Object.entries(grouped).map(([module, nodes]: [string, any]) => [
@@ -112,6 +110,27 @@ export default function LeftSidebar() {
         borderRight: `1px solid ${theme.palette.divider}`,
       }}
     >
+      <Box sx={{ 
+        p: 1, 
+        borderBottom: `1px solid ${theme.palette.divider}`,
+        backgroundColor: theme.palette.background.default 
+      }}>
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={handleViewModeChange}
+          aria-label="view mode"
+          size="small"
+          sx={{ width: '100%' }}
+        >
+          <ToggleButton value="workflow" aria-label="workflow view" sx={{ width: '50%' }}>
+            Workflow
+          </ToggleButton>
+          <ToggleButton value="tool" aria-label="tool view" sx={{ width: '50%' }}>
+            Tool
+          </ToggleButton>
+        </ToggleButtonGroup>
+      </Box>
       <Box sx={{ p: 1.5, borderBottom: `1px solid ${theme.palette.divider}` }}>
         <OutlinedInput
           startAdornment={<SearchIcon fontSize="small" sx={{ marginRight: 1 }} />}
@@ -155,7 +174,6 @@ export default function LeftSidebar() {
               '&:before': {
                 backgroundColor: 'transparent',
               },
-              //'&.Mui-expanded': { },
               '.MuiAccordionSummary-root': {
                 backgroundColor: '#1a1a1a',
                 '&:hover': {
@@ -167,7 +185,9 @@ export default function LeftSidebar() {
                 padding: '8px 4px',
               },
             }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>{module.replace(/[_-]/g, ' ').replace(/\b\w/g, char => char.toUpperCase())}</AccordionSummary>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                {module.replace(/[_-]/g, ' ').replace(/\b\w/g, char => char.toUpperCase())}
+              </AccordionSummary>
               <AccordionDetails>
                 <List dense={true} sx={{ p: 1.5, pt: 0, pb: 0, m: 0 }}>
                   {nodes.map((node: any) => (

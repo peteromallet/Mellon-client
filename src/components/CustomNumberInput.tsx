@@ -6,9 +6,33 @@ import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
-import { useState, useRef, EventHandler, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
-// TODO: Someone with React expertise should review this code
+interface CustomNumberInputProps {
+    dataKey: string;
+    value: string | number;
+    label: string;
+    dataType?: 'int' | 'float';
+    slider?: boolean;
+    disabled?: boolean;
+    onChange: (value: string) => void;
+    min?: number;
+    max?: number;
+    step?: number;
+    style?: React.CSSProperties;
+}
+
+interface DragState {
+    x: number;
+    value: number;
+}
+
+interface InputRefs {
+    input: HTMLInputElement | null;
+    dragTimeout: number | null;
+    dragStart: DragState;
+    isDragging: boolean;
+}
 
 const CustomNumberInput = ({
     value,
@@ -22,156 +46,120 @@ const CustomNumberInput = ({
     step,
     style,
     ...props
-}: {
-    dataKey: string;
-    value: string | number;
-    label: string;
-    dataType?: string;
-    slider?: boolean;
-    disabled?: boolean;
-    onChange: EventHandler<any>;
-    min?: number;
-    max?: number;
-    step?: number;
-    style?: { [key: string]: string };
-}) => {
+}: CustomNumberInputProps) => {
     const theme = useTheme();
-
     const sx = style || {};
 
-    // we display the slider only if we have both min and max values
+    const refs = useRef<InputRefs>({
+        input: null,
+        dragTimeout: null,
+        dragStart: { x: 0, value: 0 },
+        isDragging: false
+    });
+
+    const inputRefCallback = useCallback((node: HTMLDivElement | null) => {
+        // Get the actual input element from the InputBase
+        refs.current.input = node?.querySelector('input') || null;
+    }, []);
+
+    const [localValue, setLocalValue] = useState<string>('');
+    const [isEditing, setIsEditing] = useState(false);
+
+    // Constants
     const displaySlider = slider && min !== undefined && max !== undefined;
-
-    // min/max normalization
-    min = min !== undefined ? min : -Number.MAX_SAFE_INTEGER;
-    max = max !== undefined ? max : Number.MAX_SAFE_INTEGER;
-    if (min > max) {
-        [min, max] = [max, min];
-    }
-
-    const minValue = min;
-    const maxValue = max;
+    const minValue = min !== undefined ? min : -Number.MAX_SAFE_INTEGER;
+    const maxValue = max !== undefined ? max : Number.MAX_SAFE_INTEGER;
     const increment = step !== undefined ? step : (dataType === 'float' ? 0.1 : 1);
     const decimals = dataType === 'float' ? (increment.toString().split('.')[1]?.length || 1) : 0;
 
-    const [inputValue, setInputValue] = useState(String(value || 0));
-    const [isEditing, setIsEditing] = useState(false);
-    const inputRef = useRef<HTMLDivElement>(null);
-    const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const dragStartRef = useRef({ x: 0, value: 0 });
-    const isDraggingRef = useRef(false);
+    // Use the prop value when not editing, and localValue when editing
+    const displayValue = useMemo(() => {
+        return isEditing ? localValue : String(value || 0);
+    }, [isEditing, localValue, value]);
 
     const getBackgroundStyle = (value: number) => {
         if (!displaySlider) return {};
 
-        const sliderPercent = isNaN(Number(value)) ? 0 : ((Number(value) - minValue) / (maxValue - minValue) * 100);
-        const baseColor = isDraggingRef.current ? theme.palette.secondary.main : 'rgba(255,255,255,0.25)';
+        // Calculate percentage based on the actual value's proportion of the range
+        // For negative ranges, we need to normalize the value to a 0-100% scale
+        const range = maxValue - minValue;
+        const normalizedValue = value - minValue; // Shift the value to start from 0
+        const sliderPercent = Math.max(0, Math.min(100, (normalizedValue / range) * 100));
+        
+        const baseColor = refs.current.isDragging ? theme.palette.secondary.main : 'rgba(255,255,255,0.25)';
         const hoverColor = theme.palette.secondary.main;
 
-        const gradientStyle = `linear-gradient(to right, ${baseColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)`;
+        const gradientStyle = `linear-gradient(to right, ${baseColor} 0%, ${baseColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)`;
 
         return {
             background: gradientStyle,
-            '&:hover': { background: `linear-gradient(to right, ${hoverColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)` }
+            '&:hover': { background: `linear-gradient(to right, ${hoverColor} 0%, ${hoverColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)` }
         };
     };
 
     const updateValue = useCallback((value: string | number) => {
         value = Number(value);
-
-        // if the value is invalid, it defaults to the middle of the range
         if (isNaN(value)) {
             value = (maxValue - minValue) / 2;
         }
-
         const newValue = String(Math.min(maxValue, Math.max(minValue, value)).toFixed(decimals));
-        setInputValue(newValue);
-
-        if (!isEditing) {
-            onChange(newValue);
-        }
-    }, [minValue, maxValue, decimals]);
+        
+        setLocalValue(newValue);
+        onChange(newValue);
+    }, [minValue, maxValue, decimals, onChange]);
 
     const handleBlur = useCallback(() => {
-        const inputElement = inputRef.current?.querySelector('input');
+        const inputElement = refs.current.input;
+        if (inputElement) {
+            updateValue(inputElement.value);
+        }
         setIsEditing(false);
-
-        if (!inputElement) return;
-
-        inputElement.removeEventListener('blur', handleBlur as any);
-        inputElement.removeEventListener('keydown', handleKeyDown as any);
-        updateValue(inputElement.value);
     }, [updateValue]);
 
-    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-        const inputElement = inputRef.current?.querySelector('input');
-
+    const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+        const inputElement = e.currentTarget;
         if (e.key === 'Enter' || e.key === 'Escape') {
-            inputElement?.removeEventListener('blur', handleBlur as any);
-            inputElement?.removeEventListener('keydown', handleKeyDown as any);
-
             setIsEditing(false);
-            updateValue(inputElement?.value || '');
-            inputElement?.blur();
+            updateValue(inputElement.value);
+            inputElement.blur();
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
-            updateValue(Number(inputElement?.value) + increment);
+            updateValue(Number(inputElement.value) + increment);
         } else if (e.key === 'ArrowDown') {
             e.preventDefault();
-            updateValue(Number(inputElement?.value) - increment);
+            updateValue(Number(inputElement.value) - increment);
         }
     }, [increment, updateValue]);
 
-    const handleMouseMove = useCallback((e: React.MouseEvent) => {
-        clearTimeout(dragTimeoutRef.current as any);
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (refs.current.dragTimeout) {
+            clearTimeout(refs.current.dragTimeout);
+        }
 
         e.preventDefault();
         e.stopPropagation();
 
-        if (!isDraggingRef.current) {
-            isDraggingRef.current = true;
+        if (!refs.current.isDragging) {
+            refs.current.isDragging = true;
         }
 
-        const inputElement = inputRef.current?.querySelector('input');
-
-        // we are dragging, so we remove the focus from the input
-        if (document.activeElement === inputElement) {
-            inputElement?.blur();
-            setIsEditing(false);
-        }
-
-        const delta = e.clientX - dragStartRef.current.x;
+        const delta = e.clientX - refs.current.dragStart.x;
         const range = maxValue - minValue;
         const steps = range / increment || 100;
         const valueRange = displaySlider ? steps / 300 * delta : delta;
-        const newValue = dragStartRef.current.value + valueRange*increment;
+        const newValue = refs.current.dragStart.value + valueRange * increment;
 
         updateValue(newValue);
-        //onChange(normalizedValue);
-    }, [minValue, maxValue, increment, updateValue]);
+    }, [minValue, maxValue, increment, updateValue, displaySlider]);
 
-    const handleMouseUp = useCallback((e: React.MouseEvent) => {
-        clearTimeout(dragTimeoutRef.current as any);
-        const inputElement = inputRef.current?.querySelector('input');
-
-        document.removeEventListener('mousemove', handleMouseMove as any);
-        document.removeEventListener('mouseup', handleMouseUp as any);
-        //inputElement?.removeEventListener('blur', handleBlur as any);
-        //inputElement?.removeEventListener('keydown', handleKeyDown as any);
-
-        if (document.activeElement !== inputElement && !isDraggingRef.current && (e.target as HTMLElement).closest('button') === null) {
-            // give the focus to the input, unless we are clicking on a left/right button
-            inputElement?.focus();
-            inputElement?.addEventListener('blur', handleBlur as any);
-            inputElement?.addEventListener('keydown', handleKeyDown as any);
-            setIsEditing(true);
-        } else {
-            inputElement?.blur();
-            setIsEditing(false);
+    const handleMouseUp = useCallback(() => {
+        if (refs.current.dragTimeout) {
+            clearTimeout(refs.current.dragTimeout);
         }
-
-        isDraggingRef.current = false;
-    }, [handleBlur, handleKeyDown]);
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+        refs.current.isDragging = false;
+    }, [handleMouseMove]);
 
     const handleMouseDown = (e: React.MouseEvent) => {
         // Only handle left mouse button
@@ -180,54 +168,78 @@ const CustomNumberInput = ({
             e.stopPropagation();
             return;
         }
-
-        const inputElement = inputRef.current?.querySelector('input');
-
-        // If the input is already focused, act like a standard text field
-        // this allows to edit the value by just typing
-        if (document.activeElement === inputElement) return;
-
-        (document.activeElement as HTMLElement)?.blur();
+        
+        // Ignore clicks on the chevron buttons
+        const isButton = (e.target as HTMLElement).closest('button');
+        if (isButton) {
+            return;
+        }
 
         e.preventDefault();
         e.stopPropagation();
 
-        dragStartRef.current = { x: e.clientX, value: Number(inputValue) };
+        const inputElement = refs.current.input;
+        if (inputElement && document.activeElement !== inputElement) {
+            inputElement.focus();
+        }
+        
+        // Force exit editing mode and sync local value with current value
+        setIsEditing(false);
+        setLocalValue(String(value));
 
-        // we wait 200ms before entering dragging mode
-        // a quick click will just focus the input without starting the drag
-        dragTimeoutRef.current = setTimeout(() => {
-            inputElement?.blur();
-            isDraggingRef.current = true;
-        }, 200);
+        // Get the bounding rectangle of the slider container
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const leftOffset = 40;
+        const rightOffset = 40;
+        const availableWidth = rect.width - leftOffset - rightOffset;
+        
+        const clickX = e.clientX - rect.left - leftOffset;
+        const relativePosition = Math.max(0, Math.min(1, clickX / availableWidth));
 
-        document.addEventListener('mousemove', handleMouseMove as any);
-        document.addEventListener('mouseup', handleMouseUp as any);
+        if (displaySlider && clickX >= 0 && clickX <= availableWidth) {
+            const newValue = minValue + (maxValue - minValue) * relativePosition;
+            const roundedValue = Math.round(newValue / increment) * increment;
+            updateValue(roundedValue);
+            refs.current.dragStart = { x: e.clientX, value: roundedValue };
+        } else {
+            // Use the current value prop instead of displayValue
+            refs.current.dragStart = { x: e.clientX, value: Number(value) };
+        }
+
+        refs.current.isDragging = true;
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        //const value = e.target.value;
-        setInputValue(e.target.value);
-        //onChange(value);
+        e.preventDefault();
+        e.stopPropagation();
+        setIsEditing(true);
+        setLocalValue(e.target.value);
+    };
+
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        // Ignore double clicks on the chevron buttons
+        const isButton = (e.target as HTMLElement).closest('button');
+        if (isButton) {
+            return;
+        }
+
+        const inputElement = refs.current.input;
+        if (inputElement) {
+            inputElement.select();
+        }
     };
 
     useEffect(() => {
-        setInputValue(String(value));
-    }, [value]);
-
-    useEffect(() => {
+        const currentRefs = refs.current;
+        
         return () => {
-            clearTimeout(dragTimeoutRef.current as any);
-            document.removeEventListener('mousemove', handleMouseMove as any);
-            document.removeEventListener('mouseup', handleMouseUp as any);
-
-            const inputElement = inputRef.current?.querySelector('input');
-            if (inputElement) {
-                inputElement.removeEventListener('blur', handleBlur as any);
-                inputElement.removeEventListener('keydown', handleKeyDown as any);
+            if (currentRefs.dragTimeout) {
+                window.clearTimeout(currentRefs.dragTimeout);
             }
         };
-    }, [handleMouseMove, handleMouseUp, handleBlur, handleKeyDown]);
+    }, []);
 
     const field = (
         <Stack
@@ -236,12 +248,14 @@ const CustomNumberInput = ({
             spacing={0.5}
             className={`nodrag customNumberInput${disabled ? ' mellon-disabled' : ''}`}
             onMouseDown={handleMouseDown}
+            onDoubleClick={handleDoubleClick}
             sx={{
                 mb: 0,
                 p: 0.5,
                 width: '100%',
-                justifyContent: 'space-between', alignItems: 'center',
-                ...getBackgroundStyle(Number(inputValue)),
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                ...getBackgroundStyle(Number(displayValue)),
                 borderRadius: 1,
                 overflow: 'hidden',
                 userSelect: 'none',
@@ -252,12 +266,12 @@ const CustomNumberInput = ({
         >
             <IconButton
                 size="small"
-                disableRipple // ripple effect is buggy
-                onClick={() => updateValue(Number(inputValue) - increment)}
+                disableRipple
+                onClick={() => updateValue(Number(displayValue) - increment)}
                 sx={{
                     borderRadius: 1,
-                    opacity: Number(inputValue) <= minValue ? 0.4 : 1,
-                    '&:hover': { background: Number(inputValue) <= minValue ? '' : 'rgba(255,255,255,0.15)' }
+                    opacity: Number(displayValue) <= minValue ? 0.4 : 1,
+                    '&:hover': { background: Number(displayValue) <= minValue ? '' : 'rgba(255,255,255,0.15)' }
                 }}
             >
                 <ChevronLeftIcon fontSize="small" />
@@ -266,26 +280,24 @@ const CustomNumberInput = ({
                 <Typography sx={{ fontSize: '14px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={label}>{label}</Typography>
             </Box>
             <InputBase
-                ref={inputRef}
-                value={inputValue}
+                ref={inputRefCallback}
+                value={displayValue}
                 onChange={handleChange}
-                sx={{ flexGrow: 1 }}
-                slotProps={{
-                    input: {
-                        sx: { fontSize: '14px', textAlign: 'right', padding: 0, cursor: 'default' },
-                    },
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+                inputProps={{
+                    sx: { fontSize: '14px', textAlign: 'right', padding: 0, cursor: 'default' },
                 }}
-                //startAdornment={<InputAdornment sx={{ '> p': { color: theme.palette.text.primary } }} position="start">{label}</InputAdornment>}
-                size="small"
+                sx={{ flexGrow: 1 }}
             />
             <IconButton
                 size="small"
                 disableRipple
-                onClick={() => updateValue(Number(inputValue) + increment)}
+                onClick={() => updateValue(Number(displayValue) + increment)}
                 sx={{
                     borderRadius: 1,
-                    opacity: Number(inputValue) >= maxValue ? 0.4 : 1,
-                    '&:hover': { background: Number(inputValue) >= maxValue ? '' : 'rgba(255,255,255,0.15)' }
+                    opacity: Number(displayValue) >= maxValue ? 0.4 : 1,
+                    '&:hover': { background: Number(displayValue) >= maxValue ? '' : 'rgba(255,255,255,0.15)' }
                 }}
             >
                 <ChevronRightIcon fontSize="small" />

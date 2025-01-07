@@ -51,7 +51,7 @@ export default function AppToolbar() {
           timestamps: {
             type: 'array',
             display: 'output',
-            label: 'Timestamps'
+            label: 'Timeline'
           }
         }
       }

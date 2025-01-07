@@ -81,10 +81,9 @@ const DynamicComponent = ({ component, props, nodeId }: { component: string, pro
     return <Component {...props} nodeId={nodeId} nodeData={nodeData} />;
 };
 
-const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void) => {
+const renderNodeContent = (nodeId: string, key: string, props: any, onValueChange: (nodeId: string, changeKey: string, changeValue: any) => void, theme: any) => {
     let field;
     let fieldType = props.display || '';
-    const theme = useTheme();
 
     const style = props.style || {};
 
@@ -119,7 +118,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                             mb: 1,
                         }}
                     >
-                        {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
+                        {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange, theme))}
                     </Stack>
                 </Box>
             );
@@ -140,7 +139,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                         ...hidden,
                     }}
                 >
-                    {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
+                    {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange, theme))}
                 </Stack>
             );
         }
@@ -154,7 +153,7 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
                     {props.label || key}
                 </AccordionSummary>
                 <AccordionDetails sx={{ border: 'none' }}>
-                    {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange))}
+                    {Object.entries(props.params).map(([gkey, gdata]) => renderNodeContent(nodeId, gkey, gdata, onValueChange, theme))}
                 </AccordionDetails>
             </PlainAccordion>
         )
@@ -166,12 +165,12 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
     // TODO: should we use an "allowedTypes" property instead?
     const dataType = Array.isArray(props.type) && props.type.length > 0 ? props.type[0] : props.type;
 
-    if ( fieldType !== 'input' && fieldType !== 'output') {
-        if (!fieldType && props.options && typeof props.options === 'object') {
+    if (!fieldType && fieldType !== 'input' && fieldType !== 'output') {
+        if (props.options && typeof props.options === 'object') {
             fieldType = 'select';
         } else if (dataType === 'boolean') {
-            fieldType = fieldType === 'checkbox' || fieldType === 'iconToggle' ? fieldType : 'switch';
-        } else if (!fieldType && (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number' )) {
+            fieldType = props.display === 'checkbox' || props.display === 'iconToggle' ? props.display : 'switch';
+        } else if (dataType === 'int' || dataType === 'integer' || dataType === 'float' || dataType === 'number') {
             fieldType = props.display === 'slider' ? 'slider' : 'number';
         } else if (fieldType === 'ui') {
             if (dataType === 'image') {
@@ -181,12 +180,14 @@ const renderNodeContent = (nodeId: string, key: string, props: any, onValueChang
             } else if (dataType.toLowerCase() === '3d') {
                 fieldType = 'ui_3d';
             }
-        } else if (!fieldType) {
+        } else {
             fieldType = 'text';
         }
     }
 
     switch (fieldType) {
+        case 'hidden':
+            return null;
         case 'input':
             field = (
                 <Box key={key} sx={{ pt: "4px", pb: "4px", position: 'relative', ...style }}>
@@ -665,7 +666,7 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
         return acc;
     }, {});
 
-    const fields = Object.entries(groupedParams).map(([key, data]) => renderNodeContent(props.id, key, data, setParamValue));
+    const fields = Object.entries(groupedParams).map(([key, data]) => renderNodeContent(props.id, key, data, setParamValue, theme));
     const style = props.data.style || {};
 
     return (

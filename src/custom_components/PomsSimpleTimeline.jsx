@@ -7,7 +7,8 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useNodeState } from '../stores/nodeStore';
-import { dataService } from '../services/dataService';
+import dataService from '../services/dataService';
+import config from '../../config';
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 
 const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
@@ -40,6 +41,13 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   const [isDeletingTimestamp, setIsDeletingTimestamp] = useState(null);
   const lastManualSelectionRef = useRef(null);
   const [mousePosition, setMousePosition] = useState(0);
+  const [activeUploadId, setActiveUploadId] = useState(null);
+  const audioFileInputRef = useRef(null);
+  const imageFileInputRef = useRef(null);
+
+  // Add selected node check
+  const selectedNodes = useNodeState(state => state.nodes.filter(n => n.selected));
+  const isNodeSelected = selectedNodes.some(n => n.id === nodeId);
 
   useEffect(() => {
     console.log('State changed:', { draggedOver, mousePosition });
@@ -48,17 +56,91 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   const handleZoom = useCallback((direction) => {
     if (!timelineRef.current?.parentElement || !audioRef.current) return;
     
+    const timeline = timelineRef.current;
+    const container = timeline.parentElement;
+    const duration = audioRef.current.duration || 1;
+    
+    // Get measurements
+    const timelineRect = timeline.getBoundingClientRect();
+    const containerWidth = container.offsetWidth;
+    
+    // Calculate playhead position as a ratio (0 to 1)
+    const playheadRatio = currentTime / duration;
+    
+    // Calculate current scroll position as a ratio
+    const scrollRatio = container.scrollLeft / (timelineRect.width - containerWidth);
+    
+    // Disable smooth scrolling
+    container.style.scrollBehavior = 'auto';
+    
     setZoom(currentZoom => {
-      const newZoom = Math.min(
-        Math.max(
-          direction === 'in' ? currentZoom * 1.5 : currentZoom / 1.5,
-          1
-        ),
-        50
-      );
+      // Calculate new zoom level
+      const zoomFactor = direction === 'in' ? 1.5 : 1/1.5;
+      const newZoom = Math.min(Math.max(currentZoom * zoomFactor, 1), 22.5);
+      
+      requestAnimationFrame(() => {
+        // Update timeline width
+        timeline.style.width = `${newZoom * 100}%`;
+        
+        // Force layout calculation
+        const newWidth = timeline.offsetWidth;
+        
+        // Calculate new scroll position
+        const maxScroll = newWidth - containerWidth;
+        const targetScroll = Math.max(0, (playheadRatio * newWidth) - (containerWidth / 2));
+        container.scrollLeft = Math.min(targetScroll, maxScroll);
+        
+        // Re-enable smooth scrolling
+        requestAnimationFrame(() => {
+          container.style.scrollBehavior = 'smooth';
+        });
+      });
+      
       return newZoom;
     });
-  }, []);
+  }, [currentTime]);
+
+  useLayoutEffect(() => {
+    if (!timelineRef.current?.parentElement || !audioRef.current) return;
+    
+    const timeline = timelineRef.current;
+    const container = timeline.parentElement;
+    const duration = audioRef.current.duration || 1;
+    
+    // Only auto-scroll if we're playing or if zoom > 1
+    if (isPlaying || zoom > 1) {
+      const timelineWidth = timeline.offsetWidth;
+      const containerWidth = container.offsetWidth;
+      const playheadPixels = (currentTime / duration) * timelineWidth;
+      
+      // Calculate the current viewport boundaries
+      const viewportStart = container.scrollLeft;
+      const viewportEnd = viewportStart + containerWidth;
+      
+      // Use fixed buffer size
+      const buffer = containerWidth * 0.25;
+      
+      const isOutsideMiddle = playheadPixels < (viewportStart + buffer) || 
+                           playheadPixels > (viewportEnd - buffer);
+      
+      if (isOutsideMiddle) {
+        // Calculate target scroll position
+        const targetScrollLeft = Math.max(0, playheadPixels - (containerWidth / 2));
+        const maxScroll = Math.max(0, timelineWidth - containerWidth);
+        const finalScrollLeft = Math.min(targetScrollLeft, maxScroll);
+        
+        // Only scroll if we need to move more than a few pixels
+        if (Math.abs(container.scrollLeft - finalScrollLeft) > 2) {
+          container.style.scrollBehavior = 'auto';
+          container.scrollLeft = finalScrollLeft;
+          
+          requestAnimationFrame(() => {
+            container.style.scrollBehavior = 'smooth';
+          });
+        }
+      }
+    }
+  }, [zoom, currentTime, isPlaying]);
 
   const getTimelineMetrics = (timelineEl, containerEl, duration, currentTime) => {
     if (!timelineEl || !containerEl || !duration) return null;
@@ -73,46 +155,16 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
     };
   };
 
-  useLayoutEffect(() => {
-    if (!timelineRef.current?.parentElement || !audioRef.current) return;
-    
-    const timeline = timelineRef.current;
-    const container = timeline.parentElement;
-    const duration = audioRef.current.duration || 1;
-    const timelineWidth = timeline.offsetWidth;
-    const containerWidth = container.offsetWidth;
-    
-    // Calculate the pixel position of the playhead
-    const playheadPosition = (currentTime / duration) * timelineWidth;
-    
-    if (zoom > 1) {
-      // Remove smooth scrolling to prevent jerkiness
-      container.style.scrollBehavior = 'auto';
-      
-      // Always center around playhead when zoomed
-      const targetScrollLeft = Math.max(0, playheadPosition - (containerWidth / 2));
-      
-      // Ensure we don't scroll past the end
-      const maxScroll = Math.max(0, timelineWidth - containerWidth);
-      const finalScrollLeft = Math.min(Math.max(0, targetScrollLeft), maxScroll);
-      
-      container.scrollLeft = finalScrollLeft;
-      setViewportStart(finalScrollLeft);
-    }
-  }, [zoom, currentTime]);
-
   const generateUniqueId = () => {
     return Math.random().toString(36).substr(2, 9);
   };
 
   const loadImage = async (imageName) => {
     try {
-      const response = await dataService.loadNodeFile(nodeId, imageName);
-      if (response) {
-        const blob = new Blob([response], { type: 'image/png' });
-        const url = URL.createObjectURL(blob);
-        setImageUrls(prev => ({ ...prev, [imageName]: url }));
-      }
+      // Extract just the filename if it includes a path
+      const baseFileName = imageName.includes('/') ? imageName.split('/').pop() : imageName;
+      const imageUrl = `http://${config.serverAddress}/data/files/${baseFileName}`;
+      setImageUrls(prev => ({ ...prev, [imageName]: imageUrl }));
     } catch (error) {
       console.error('Error loading image:', error);
     }
@@ -126,39 +178,42 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
     });
   }, [timestamps]);
 
-  useEffect(() => {
-    return () => {
-      Object.values(imageUrls).forEach(url => {
-        URL.revokeObjectURL(url);
-      });
-    };
-  }, []);
-
   const handleImageUpload = async (file, timestampId) => {
-    if (file) {
-      try {
-        const fileBuffer = await file.arrayBuffer();
-        const imageName = `${timestampId}_${file.name}`;
-        await dataService.saveNodeFile(nodeId, imageName, fileBuffer);
-        
-        const url = URL.createObjectURL(new Blob([fileBuffer], { type: file.type }));
-        setImageUrls(prev => ({ ...prev, [imageName]: url }));
-        
-        setTimestamps(prev => prev.map(t => 
-          t.id === timestampId 
-            ? { ...t, image: imageName }
-            : t
-        ));
-      } catch (error) {
-        console.error('Error saving image:', error);
-        alert('Failed to save image. Please try again.');
-      }
+    if (!isNodeSelected || !file) return;
+    try {
+      const fileBuffer = await file.arrayBuffer();
+      const imageName = `${timestampId}_${file.name}`;
+      const savedFileName = await dataService.saveNodeFile(nodeId, imageName, fileBuffer);
+      
+      // Use direct server URL instead of blob URL
+      const imageUrl = `http://${config.serverAddress}/data/files/${savedFileName}`;
+      setImageUrls(prev => ({ ...prev, [savedFileName]: imageUrl }));
+      
+      setTimestamps(prev => prev.map(t => 
+        t.id === timestampId 
+          ? { ...t, image: savedFileName }
+          : t
+      ));
+    } catch (error) {
+      console.error('Error saving image:', error);
+      alert('Failed to save image. Please try again.');
     }
   };
 
-  const handleFileInputChange = (event, timestampId) => {
-    const file = event.target.files[0];
-    if (file) {
+  const handleFileInputChange = async (event, timestampId) => {
+    if (!isNodeSelected) return;
+    console.log('File input change', {
+      timestampId,
+      hasFiles: event.target.files?.length > 0
+    });
+
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      console.log('Processing image file', {
+        name: file.name,
+        type: file.type,
+        size: file.size
+      });
       handleImageUpload(file, timestampId);
     }
   };
@@ -273,15 +328,16 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   }, [timestamps, nodeId, audioFileName, setParamValue]);
 
   const handleFileUpload = async (event) => {
+    if (!isNodeSelected) return;
     const file = event.target.files[0];
     if (file) {
       try {
         const url = URL.createObjectURL(file);
         const fileBuffer = await file.arrayBuffer();
-        await dataService.saveNodeFile(nodeId, file.name, fileBuffer);
+        const fullPath = await dataService.saveNodeFile(nodeId, file.name, fileBuffer);
         
         setAudioFile(url);
-        setAudioFileName(file.name);
+        setAudioFileName(fullPath);
         setTimestamps([]);
         setViewportStart(0);
         setZoom(1);
@@ -304,7 +360,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
             component: 'PomsSimpleTimeline',
             timestamps: []
           },
-          files: [file.name],
+          files: [file.name],  // Store just the filename in the files array
           cache: true
         };
         
@@ -322,9 +378,11 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const togglePlayPause = () => {
+    if (!isNodeSelected || !audioRef.current) return;
     if (audioRef.current) {
       if (isPlaying) {
         audioRef.current.pause();
+        setLastHitColor(null);
       } else {
         audioRef.current.play();
       }
@@ -334,6 +392,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
 
   useEffect(() => {
     const handleKeyPress = (event) => {
+      if (!isNodeSelected) return;
       if (event.code === 'Space') {
         event.preventDefault();
         if (audioRef.current) {
@@ -357,10 +416,12 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
             const isDuplicate = prev.some(t => t.time === timeStr);
             if (!isDuplicate) {
               console.log('Adding new timestamp');
-              return [...prev, { 
+              const newTimestamp = { 
                 id: generateUniqueId(),
                 time: timeStr 
-              }].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
+              };
+              setSelectedTimestamp(newTimestamp.id);
+              return [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
             }
             console.log('Duplicate timestamp, skipping');
             return prev;
@@ -464,7 +525,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [isPlaying, handleZoom, timestamps, currentTime, setCurrentTime, setLastHitColor]);
+  }, [isPlaying, handleZoom, timestamps, currentTime, setCurrentTime, setLastHitColor, isNodeSelected]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -540,14 +601,14 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleSelection = (stampId, e) => {
-    if (!isDragging && !e.target.closest('.image-delete-button')) {
-      e.preventDefault();
-      e.stopPropagation();
-      setSelectedTimestamp(stampId === selectedTimestamp ? null : stampId);
-    }
+    if (!isNodeSelected) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedTimestamp(stampId === selectedTimestamp ? null : stampId);
   };
 
   const handleDragStart = (index, e) => {
+    if (!isNodeSelected) return;
     e.preventDefault();
     e.stopPropagation();
     const timestamp = timestamps[index];
@@ -570,7 +631,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleDragMove = (e) => {
-    if (!dragRef.current?.id || !timelineRef.current || !audioRef.current) {
+    if (!isNodeSelected || !dragRef.current?.id || !timelineRef.current || !audioRef.current) {
       return;
     }
 
@@ -606,6 +667,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleDragEnd = (e) => {
+    if (!isNodeSelected) return;
     if (dragRef.current !== null) {
       // Prevent the mouseup event from triggering timeline click
       e.preventDefault();
@@ -633,7 +695,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleTimelineMouseDown = async (e) => {
-    if (isInteractingWithTimestampRef.current || justFinishedDraggingRef.current) {
+    if (!isNodeSelected || isInteractingWithTimestampRef.current || justFinishedDraggingRef.current) {
       return;
     }
 
@@ -687,6 +749,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleTimelineDragStart = (e) => {
+    if (!isNodeSelected) return;
     if (zoom <= 1) {
       handleTimelineMouseDown(e);
       return;
@@ -700,6 +763,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleTimelineDragMove = (e) => {
+    if (!isNodeSelected) return;
     if (!isDraggingTimelineRef.current && Math.abs(e.clientX - initialMousePos.current.x) > 5) {
       isDraggingTimelineRef.current = true;
       e.preventDefault();
@@ -713,6 +777,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   };
 
   const handleTimelineDragEnd = (e) => {
+    if (!isNodeSelected) return;
     if (!isDraggingTimelineRef.current && timelineRef.current && audioRef.current) {
       const timeline = timelineRef.current;
       const duration = audioRef.current.duration;
@@ -797,27 +862,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
         event.preventDefault();
         event.stopPropagation();
         
-        const timestampToDelete = timestamps.find(t => t.id === selectedTimestamp);
-        if (!timestampToDelete) return;
-
-        // If there's an image, delete it first
-        if (timestampToDelete.image) {
-          try {
-            await dataService.deleteNodeFile(nodeId, timestampToDelete.image);
-            if (imageUrls[timestampToDelete.image]) {
-              URL.revokeObjectURL(imageUrls[timestampToDelete.image]);
-              setImageUrls(prev => {
-                const newUrls = { ...prev };
-                delete newUrls[timestampToDelete.image];
-                return newUrls;
-              });
-            }
-          } catch (error) {
-            console.error('Error deleting image file:', error);
-          }
-        }
-
-        // Delete the timestamp and clear selection
+        // Simply remove the timestamp
         setTimestamps(prev => prev.filter(t => t.id !== selectedTimestamp));
         setSelectedTimestamp(null);
       }
@@ -825,7 +870,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
 
     window.addEventListener('keydown', handleDelete);
     return () => window.removeEventListener('keydown', handleDelete);
-  }, [selectedTimestamp, timestamps, nodeId, imageUrls]);
+  }, [selectedTimestamp]);
 
   const preventEventsDuringDrag = (e) => {
     if (isDragging) {
@@ -842,6 +887,68 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
       audioRef.current.currentTime = currentTime;
     }
   }, [isPlaying]);
+
+  const handleImageDrop = async (fileOrUrl, e, timestampId) => {
+    if (!isNodeSelected) return;
+    console.log('Timeline: Handling image drop', { fileOrUrl, timestampId });
+    
+    try {
+      if (typeof fileOrUrl === 'string') {
+        // For URLs from the gallery, extract just the filename
+        const filename = fileOrUrl.split('/').pop();
+        // Since this is an internal image, we can just use the filename
+        setTimestamps(prev => prev.map(t => 
+          t.id === timestampId 
+            ? { ...t, image: filename }
+            : t
+        ));
+        // Set the URL directly since we know it's from our server
+        setImageUrls(prev => ({ ...prev, [filename]: fileOrUrl }));
+      } else {
+        // Handle File drop
+        const fileBuffer = await fileOrUrl.arrayBuffer();
+        const imageName = `${timestampId}_${fileOrUrl.name}`;
+        const savedFileName = await dataService.saveNodeFile(nodeId, imageName, fileBuffer);
+        
+        // Use direct server URL
+        const imageUrl = `http://${config.serverAddress}/data/files/${savedFileName}`;
+        setImageUrls(prev => ({ ...prev, [savedFileName]: imageUrl }));
+        
+        setTimestamps(prev => prev.map(t => 
+          t.id === timestampId 
+            ? { ...t, image: savedFileName }
+            : t
+        ));
+      }
+    } catch (error) {
+      console.error('Timeline: Error handling image drop:', error);
+      alert('Failed to handle image. Please try again.');
+    }
+  };
+
+  // Add effect to initialize drop zone
+  useEffect(() => {
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+
+    const handleDragOver = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (isDraggingTimelineRef.current) return;
+      
+      const rect = timeline.getBoundingClientRect();
+      const container = timeline.parentElement;
+      const currentScrollLeft = container.scrollLeft;
+      const mouseX = e.clientX - rect.left + currentScrollLeft;
+      const totalWidth = rect.width;
+      const percentageAcross = (mouseX / totalWidth) * 100;
+      setMousePosition(percentageAcross);
+      setDraggedOver('timeline');
+    };
+
+    timeline.addEventListener('dragover', handleDragOver);
+    return () => timeline.removeEventListener('dragover', handleDragOver);
+  }, []);
 
   return (
     <Card sx={{ 
@@ -861,6 +968,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
         }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <input
+              ref={audioFileInputRef}
               type="file"
               accept="audio/*"
               onChange={handleFileUpload}
@@ -1020,7 +1128,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           <li>F/G - Add timestamp</li>
                           <li>Q/W - Decrease/Increase speed</li>
                           <li>E/R - Zoom out/in</li>
-                          <li>1/2 - Jump to previous/next timestamp</li>
+                          <li>1/2 - Previous/next timestamp</li>
                           <li>Tab/T - Scrub backward/forwards</li>
                           <li>D - Delete selected</li>
                         </Box>
@@ -1068,76 +1176,63 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                         position: 'relative',
                         height: '140px',
                         bgcolor: 'grey.100',
-                        width: `${(1 + (zoom - 1) * 0.5) * 100}%`,
-                        minWidth: zoom <= 1 ? '100%' : Math.max(800, window.innerWidth * (1 + (zoom - 1) * 0.2)),
+                        width: zoom <= 1 ? '100%' : `${zoom * 100}%`,
+                        minWidth: '100%',
                         cursor: isDraggingTimelineRef.current ? 'grabbing' : (zoom > 1 ? 'grab' : 'pointer'),
                         userSelect: 'none',
                         '&:hover': {
                           '& .hover-button': {
                             opacity: isInteractingWithTimestampRef.current ? 0 : 1
                           }
+                        },
+                        // Add these styles to ensure the timeline is always ready for drops
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          zIndex: 0
                         }
                       }}
                       onClick={handleTimelineMouseDown}
                       onMouseDown={handleTimelineDragStart}
-                      onDragOver={(e) => {
-                        if (!isDraggingTimelineRef.current && timelineRef.current) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          const rect = timelineRef.current.getBoundingClientRect();
-                          const mouseX = e.clientX - rect.left;
-                          const percentageAcross = mouseX / rect.width * 100;
-                          console.log('Timeline DragOver:', {
-                            mouseX,
-                            percentageAcross,
-                            isDraggingTimelineRef: isDraggingTimelineRef.current,
-                            draggedOver
-                          });
-                          setMousePosition(percentageAcross);
-                          setDraggedOver('timeline');
-                        }
-                      }}
                       onDragEnter={(e) => {
                         if (!isDraggingTimelineRef.current) {
                           e.preventDefault();
                           e.stopPropagation();
                           const rect = timelineRef.current.getBoundingClientRect();
-                          const mouseX = e.clientX - rect.left;
-                          const percentageAcross = mouseX / rect.width * 100;
+                          const container = timelineRef.current.parentElement;
+                          const currentScrollLeft = container.scrollLeft;
+                          const mouseX = e.clientX - rect.left + currentScrollLeft;
+                          const totalWidth = rect.width;
+                          const percentageAcross = (mouseX / totalWidth) * 100;
                           console.log('Timeline DragEnter:', {
                             mouseX,
+                            totalWidth,
                             percentageAcross,
                             isDraggingTimelineRef: isDraggingTimelineRef.current,
-                            draggedOver
+                            draggedOver,
+                            zoom,
+                            scrollLeft: currentScrollLeft
                           });
                           setMousePosition(percentageAcross);
                           setDraggedOver('timeline');
                         }
                       }}
-                      onDragLeave={(e) => {
-                        if (!isDraggingTimelineRef.current) {
+                      onDragOver={(e) => {
+                        if (!isDraggingTimelineRef.current && timelineRef.current) {
                           e.preventDefault();
                           e.stopPropagation();
                           const rect = timelineRef.current.getBoundingClientRect();
-                          console.log('Timeline DragLeave:', {
-                            clientX: e.clientX,
-                            clientY: e.clientY,
-                            bounds: {
-                              left: rect.left,
-                              right: rect.right,
-                              top: rect.top,
-                              bottom: rect.bottom
-                            },
-                            draggedOver
-                          });
-                          if (
-                            e.clientX < rect.left ||
-                            e.clientX > rect.right ||
-                            e.clientY < rect.top ||
-                            e.clientY > rect.bottom
-                          ) {
-                            setDraggedOver(null);
-                          }
+                          const container = timelineRef.current.parentElement;
+                          const currentScrollLeft = container.scrollLeft;
+                          const mouseX = e.clientX - rect.left + currentScrollLeft;
+                          const totalWidth = rect.width;
+                          const percentageAcross = (mouseX / totalWidth) * 100;
+                          setMousePosition(percentageAcross);
+                          setDraggedOver('timeline');
                         }
                       }}
                       onDrop={(e) => {
@@ -1146,24 +1241,162 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           e.stopPropagation();
                           setDraggedOver(null);
                           
-                          const file = e.dataTransfer.files[0];
-                          if (file && file.type.startsWith('image/')) {
-                            const rect = timelineRef.current.getBoundingClientRect();
-                            const clickX = e.clientX - rect.left;
-                            const duration = audioRef.current.duration || 1;
-                            const clickPercent = clickX / rect.width;
-                            const newTime = (clickPercent * duration).toFixed(4);
-                            
-                            const newTimestamp = { 
-                              id: generateUniqueId(),
-                              time: newTime 
-                            };
-                            
-                            setTimestamps(prev => {
-                              const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
-                              handleImageUpload(file, newTimestamp.id);
-                              return newTimestamps;
-                            });
+                          // Add detailed debugging of drag data
+                          console.log('Drop Event Debug:', {
+                            types: Array.from(e.dataTransfer.types),
+                            items: Array.from(e.dataTransfer.items).map(item => ({
+                              kind: item.kind,
+                              type: item.type
+                            })),
+                            files: Array.from(e.dataTransfer.files).map(file => ({
+                              name: file.name,
+                              type: file.type,
+                              size: file.size
+                            })),
+                            text: e.dataTransfer.getData('text/plain'),
+                            html: e.dataTransfer.getData('text/html'),
+                            uri: e.dataTransfer.getData('text/uri-list')
+                          });
+                          
+                          // Store current scroll position and timeline metrics
+                          const container = timelineRef.current.parentElement;
+                          const currentScrollLeft = container.scrollLeft;
+                          const timelineWidth = timelineRef.current.offsetWidth;
+                          const containerWidth = container.offsetWidth;
+                          const rect = timelineRef.current.getBoundingClientRect();
+                          
+                          console.log('Timeline Drop:', {
+                            files: e.dataTransfer.files,
+                            types: e.dataTransfer.types,
+                            items: Array.from(e.dataTransfer.items).map(item => ({
+                              kind: item.kind,
+                              type: item.type
+                            })),
+                            zoom,
+                            scrollLeft: currentScrollLeft,
+                            timelineWidth,
+                            containerWidth,
+                            rectLeft: rect.left
+                          });
+                          
+                          // Try to get file from items first
+                          const items = Array.from(e.dataTransfer.items);
+                          const fileItem = items.find(item => item.kind === 'file');
+                          if (fileItem) {
+                            const file = fileItem.getAsFile();
+                            if (file && file.type.startsWith('image/')) {
+                              // Calculate drop position based on zoom state
+                              let mouseX, clickPercent;
+                              if (zoom > 1) {
+                                // Use the exact same calculation as the preview indicator
+                                mouseX = e.clientX - rect.left + currentScrollLeft;
+                                const totalWidth = rect.width;
+                                clickPercent = mouseX / totalWidth;
+                              } else {
+                                // When not zoomed, use timeline-relative position
+                                mouseX = e.clientX - rect.left;
+                                clickPercent = mouseX / rect.width;
+                              }
+                              
+                              const duration = audioRef.current.duration || 1;
+                              const newTime = (clickPercent * duration).toFixed(4);
+                              
+                              console.log('Timeline Drop Calculations:', {
+                                mouseX,
+                                timelineWidth,
+                                clickPercent,
+                                duration,
+                                newTime,
+                                rect: {
+                                  width: rect.width,
+                                  left: rect.left
+                                },
+                                clientX: e.clientX,
+                                scrollLeft: currentScrollLeft,
+                                zoom
+                              });
+                              
+                              const newTimestamp = { 
+                                id: generateUniqueId(),
+                                time: newTime 
+                              };
+                              
+                              // Temporarily disable smooth scrolling
+                              container.style.scrollBehavior = 'auto';
+                              
+                              setTimestamps(prev => {
+                                const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
+                                handleImageDrop(file, e, newTimestamp.id);
+                                setSelectedTimestamp(newTimestamp.id);
+                                return newTimestamps;
+                              });
+                              
+                              // Restore scroll position and smooth scrolling
+                              requestAnimationFrame(() => {
+                                container.scrollLeft = currentScrollLeft;
+                                container.style.scrollBehavior = 'smooth';
+                              });
+                            }
+                          } else {
+                            // Handle image URL drops with the same coordinate calculation logic
+                            const imageUrl = e.dataTransfer.getData('text/plain');
+                            if (imageUrl) {
+                              console.log('Timeline Drop: Got image URL', { imageUrl });
+                              
+                              // Calculate drop position based on zoom state
+                              let mouseX, clickPercent;
+                              if (zoom > 1) {
+                                // Use the exact same calculation as the preview indicator
+                                mouseX = e.clientX - rect.left + currentScrollLeft;
+                                const totalWidth = rect.width;
+                                clickPercent = mouseX / totalWidth;
+                              } else {
+                                // When not zoomed, use timeline-relative position
+                                mouseX = e.clientX - rect.left;
+                                clickPercent = mouseX / rect.width;
+                              }
+                              
+                              const duration = audioRef.current.duration || 1;
+                              const newTime = (clickPercent * duration).toFixed(4);
+                              
+                              console.log('Timeline Drop Calculations:', {
+                                mouseX,
+                                timelineWidth,
+                                clickPercent,
+                                duration,
+                                newTime,
+                                rect: {
+                                  width: rect.width,
+                                  left: rect.left
+                                },
+                                clientX: e.clientX,
+                                scrollLeft: currentScrollLeft,
+                                zoom
+                              });
+                              
+                              const newTimestamp = { 
+                                id: generateUniqueId(),
+                                time: newTime 
+                              };
+                              
+                              // Temporarily disable smooth scrolling
+                              container.style.scrollBehavior = 'auto';
+                              
+                              setTimestamps(prev => {
+                                const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
+                                handleImageDrop(imageUrl, e, newTimestamp.id);
+                                setSelectedTimestamp(newTimestamp.id);
+                                return newTimestamps;
+                              });
+                              
+                              // Restore scroll position and smooth scrolling
+                              requestAnimationFrame(() => {
+                                container.scrollLeft = currentScrollLeft;
+                                container.style.scrollBehavior = 'smooth';
+                              });
+                            } else {
+                              console.log('Timeline Drop: No valid image found');
+                            }
                           }
                         }
                       }}
@@ -1249,7 +1482,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           height: '14px',
                           width: '14px',
                           minWidth: '14px',
-                          zIndex: 20,
+                          zIndex: 1,
                           opacity: 0,
                           transition: 'opacity 0.2s',
                           bgcolor: 'rgba(255, 165, 0, 0.4)',
@@ -1268,7 +1501,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             left: '-5px',
                             right: '-5px',
                             bottom: '-5px',
-                          }
+                          },
+                          pointerEvents: hoveredTimestamp ? 'none' : 'auto'
                         }}
                         onMouseDown={(e) => {
                           e.preventDefault();
@@ -1288,10 +1522,12 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             setTimestamps(prev => {
                               const isDuplicate = prev.some(t => t.time === timeStr);
                               if (!isDuplicate) {
-                                return [...prev, { 
+                                const newTimestamp = { 
                                   id: generateUniqueId(),
                                   time: timeStr 
-                                }].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
+                                };
+                                setSelectedTimestamp(newTimestamp.id);
+                                return [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
                               }
                               return prev;
                             });
@@ -1300,6 +1536,17 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       >
                         +
                       </Button>
+
+                      <input
+                        ref={imageFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          handleFileInputChange(e, activeUploadId);
+                          setActiveUploadId(null);
+                        }}
+                        style={{ display: 'none' }}
+                      />
 
                       {timestamps.map((stamp, index) => {
                         const duration = audioRef.current?.duration || 1;
@@ -1322,8 +1569,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                               zIndex: draggedTimestamp === stamp.id ? 100000 : 
                                      selectedTimestamp === stamp.id ? 99999 :
                                      hoveredTimestamp === stamp.id ? 99998 : 1,
-                              pointerEvents: isDragging && draggedTimestamp !== stamp.id ? 'none' : 'auto',
-                              transition: draggedTimestamp === stamp.id ? 'none' : 'all 0.2s',
+                              pointerEvents: 'auto',
                               '&::before': {
                                 content: '""',
                                 position: 'absolute',
@@ -1339,6 +1585,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                 opacity: selectedTimestamp === stamp.id || hoveredTimestamp === stamp.id || draggedTimestamp === stamp.id ? 1 : 0.7,
                                 transition: 'all 0.2s',
                                 zIndex: -1,
+                                pointerEvents: 'none'
                               },
                               '& > *': {
                                 zIndex: 'inherit',
@@ -1360,10 +1607,51 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             }}
                             onClick={(e) => handleSelection(stamp.id, e)}
                             onMouseDown={(e) => {
-                              if (e.button === 0 && !e.target.closest('.image-delete-button')) {
+                              if (e.button === 0 && 
+                                  !e.target.closest('.image-delete-button') && 
+                                  !e.target.closest('.image-upload-button')) {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 handleDragStart(index, e);
+                              }
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggedOver(stamp.id);
+                            }}
+                            onDragLeave={() => setDraggedOver(null)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDraggedOver(null);
+                              
+                              console.log('Timeline: Drop on existing timestamp', {
+                                timestampId: stamp.id,
+                                types: e.dataTransfer.types,
+                                items: Array.from(e.dataTransfer.items).map(item => ({
+                                  kind: item.kind,
+                                  type: item.type
+                                }))
+                              });
+                              
+                              // Try to get file from items first
+                              const items = Array.from(e.dataTransfer.items);
+                              const fileItem = items.find(item => item.kind === 'file');
+                              if (fileItem) {
+                                const file = fileItem.getAsFile();
+                                if (file && file.type.startsWith('image/')) {
+                                  handleImageDrop(file, e, stamp.id);
+                                }
+                              } else {
+                                // Try to get image URL from text data
+                                const imageUrl = e.dataTransfer.getData('text/plain');
+                                if (imageUrl) {
+                                  console.log('Timeline: Got image URL for existing timestamp', { imageUrl });
+                                  handleImageDrop(imageUrl, e, stamp.id);
+                                } else {
+                                  console.log('Timeline: No valid image found for existing timestamp');
+                                }
                               }
                             }}
                           >
@@ -1421,41 +1709,6 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                   }
                                 })
                               }}
-                              onMouseEnter={(e) => {
-                                if (e.target === e.currentTarget && !isDragging) {
-                                  setHoveredTimestamp(stamp.id);
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (e.target === e.currentTarget && !isDragging) {
-                                  setHoveredTimestamp(null);
-                                }
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              onDragOver={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDraggedOver(stamp.id);
-                              }}
-                              onDragEnter={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDraggedOver(stamp.id);
-                              }}
-                              onDragLeave={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDraggedOver(null);
-                              }}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setDraggedOver(null);
-                                const file = e.dataTransfer.files[0];
-                                if (file && file.type.startsWith('image/')) {
-                                  handleImageUpload(file, stamp.id);
-                                }
-                              }}
                             >
                               {draggedOver === stamp.id && (
                                 <Box
@@ -1484,8 +1737,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                       : (hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging
                                         ? 'translateX(-50%) scale(1.5) translateY(-8px)'
                                         : 'translateX(-50%) scale(1) translateY(0)',
-                                    width: 48,
-                                    height: 48,
+                                    width: 77,
+                                    height: 77,
                                     marginBottom: '8px',
                                     borderRadius: 1,
                                     overflow: 'visible',
@@ -1499,8 +1752,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                       ? 'none' 
                                       : 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                                     cursor: 'move',
-                                    zIndex: 3,
-                                    pointerEvents: isDragging && draggedTimestamp !== stamp.id ? 'none' : 'auto',
+                                    zIndex: 1000000,
+                                    pointerEvents: isDragging ? (draggedTimestamp === stamp.id ? 'auto' : 'none') : 'auto',
                                     '&:hover': {
                                       '& .image-delete-button': {
                                         opacity: isDragging ? 0 : 1,
@@ -1509,16 +1762,6 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                       }
                                     }
                                   }}
-                                  onMouseDown={(e) => {
-                                    if (!e.target.closest('.image-delete-button')) {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      handleDragStart(index, e);
-                                    }
-                                  }}
-                                  onClick={(e) => handleSelection(stamp.id, e)}
-                                  onMouseEnter={(e) => preventEventsDuringDrag(e)}
-                                  onMouseLeave={(e) => preventEventsDuringDrag(e)}
                                 >
                                   <Box
                                     component="img"
@@ -1540,42 +1783,32 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                       e.stopPropagation();
                                       e.nativeEvent.stopImmediatePropagation();
                                       
+                                      // Prevent multiple clicks during deletion
+                                      if (isDeletingTimestamp === stamp.id) return;
+                                      setIsDeletingTimestamp(stamp.id);
+
                                       try {
-                                        // First, get current node data
-                                        const currentData = await dataService.loadNodeData(nodeId);
-                                        if (!currentData) {
-                                          throw new Error('Could not load node data');
+                                        if (stamp.image) {
+                                          if (imageUrls[stamp.image]) {
+                                            URL.revokeObjectURL(imageUrls[stamp.image]);
+                                            setImageUrls(prev => {
+                                              const newUrls = { ...prev };
+                                              delete newUrls[stamp.image];
+                                              return newUrls;
+                                            });
+                                          }
                                         }
 
-                                        // Remove the file from the files array
-                                        const updatedFiles = (currentData.files || []).filter(f => f !== stamp.image);
-
-                                        // Update node data with the file removed
-                                        await dataService.saveNodeData(nodeId, {
-                                          ...currentData,
-                                          files: updatedFiles
-                                        });
-
-                                        // Clean up the URL from memory
-                                        if (imageUrls[stamp.image]) {
-                                          URL.revokeObjectURL(imageUrls[stamp.image]);
-                                          setImageUrls(prev => {
-                                            const newUrls = { ...prev };
-                                            delete newUrls[stamp.image];
-                                            return newUrls;
-                                          });
-                                        }
-
-                                        // Update timestamps to remove image reference
+                                        // Update timestamps to remove only the image reference
                                         setTimestamps(prev => prev.map(t => 
                                           t.id === stamp.id 
-                                            ? { ...t, image: undefined }
+                                            ? { ...t, image: null }
                                             : t
                                         ));
-
-                                        console.log('Image deletion complete');
                                       } catch (error) {
-                                        console.error('Error removing image:', error);
+                                        console.error('Error removing image reference:', error);
+                                      } finally {
+                                        setIsDeletingTimestamp(null);
                                       }
                                     }}
                                     onMouseDown={(e) => {
@@ -1618,61 +1851,53 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                 </Box>
                               )}
                               {!stamp.image && !draggedTimestamp && (
-                                <>
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileInputChange(e, stamp.id)}
-                                    style={{ display: 'none' }}
-                                    id={`image-upload-${stamp.id}`}
-                                  />
-                                  <label 
-                                    htmlFor={`image-upload-${stamp.id}`}
+                                <Box
+                                  sx={{
+                                    position: 'absolute',
+                                    bottom: '100%',
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    marginBottom: '14px',
+                                    zIndex: 999999,
+                                    padding: '4px',
+                                    isolation: 'isolate'
+                                  }}
+                                >
+                                  <IconButton
                                     className="image-upload-button"
-                                    onMouseDown={(e) => {
-                                      e.stopPropagation();
-                                    }}
+                                    size="small"
                                     onClick={(e) => {
+                                      e.preventDefault();
                                       e.stopPropagation();
+                                      setActiveUploadId(stamp.id);
+                                      if (imageFileInputRef.current) {
+                                        imageFileInputRef.current.value = '';
+                                        imageFileInputRef.current.click();
+                                      }
                                     }}
-                                    style={{
-                                      position: 'absolute',
-                                      bottom: '100%',
-                                      left: '50%',
-                                      transform: 'translateX(-50%)',
-                                      marginBottom: '4px',
-                                      padding: '2px',
-                                      zIndex: hoveredTimestamp === stamp.id ? 997 : 998,
-                                      pointerEvents: isDragging ? 'none' : 'auto',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
+                                    onMouseDown={e => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                    }}
+                                    sx={{ 
+                                      p: 0.5,
+                                      bgcolor: 'grey.500',
+                                      color: 'white',
                                       width: '24px',
                                       height: '24px',
-                                      cursor: 'pointer',
                                       opacity: hoveredTimestamp === stamp.id && !isDragging ? 1 : 0,
                                       visibility: hoveredTimestamp === stamp.id && !isDragging ? 'visible' : 'hidden',
-                                      transition: 'opacity 0.2s'
+                                      transition: 'opacity 0.2s',
+                                      position: 'relative',
+                                      zIndex: 999999,
+                                      '&:hover': {
+                                        bgcolor: 'grey.600'
+                                      }
                                     }}
                                   >
-                                    <IconButton
-                                      component="span"
-                                      size="small"
-                                      sx={{ 
-                                        p: 0.5,
-                                        bgcolor: 'grey.500',
-                                        color: 'white',
-                                        width: '24px',
-                                        height: '24px',
-                                        '&:hover': {
-                                          bgcolor: 'grey.600'
-                                        }
-                                      }}
-                                    >
-                                      <AddPhotoAlternateIcon sx={{ fontSize: 16 }} />
-                                    </IconButton>
-                                  </label>
-                                </>
+                                    <AddPhotoAlternateIcon sx={{ fontSize: 16 }} />
+                                  </IconButton>
+                                </Box>
                               )}
                               <Typography sx={{ fontSize: 'inherit', color: 'text.primary' }}>
                                 {parseFloat(stamp.time).toFixed(2)}s

@@ -9,7 +9,17 @@ export interface NodePersistentData {
 }
 
 class DataService {
-    private baseUrl = `http://${config.serverAddress}`;
+    private baseUrl: string;
+    private readonly FILES_BASE_PATH = '';
+
+    constructor() {
+        this.baseUrl = `http://${config.serverAddress}`;
+    }
+
+    getFullFilePath(fileName: string): string {
+        const baseFileName = fileName.includes('/') ? fileName.split('/').pop()! : fileName;
+        return baseFileName;
+    }
 
     async saveNodeData(nodeName: string, data: NodePersistentData): Promise<void> {
         const response = await fetch(`${this.baseUrl}/node/${nodeName}/data`, {
@@ -53,9 +63,10 @@ class DataService {
 
     async saveNodeFile(nodeName: string, fileName: string, fileData: ArrayBuffer): Promise<string> {
         const formData = new FormData();
-        formData.append('file', new Blob([fileData]), fileName);
+        const baseFileName = fileName.includes('/') ? fileName.split('/').pop()! : fileName;
+        formData.append('file', new Blob([fileData]), baseFileName);
 
-        const response = await fetch(`${this.baseUrl}/node/${nodeName}/file`, {
+        const response = await fetch(`${this.baseUrl}/data/files`, {
             method: 'POST',
             body: formData
         });
@@ -64,12 +75,13 @@ class DataService {
             throw new Error(`Failed to save node file: ${response.statusText}`);
         }
 
-        return fileName;
+        return baseFileName;
     }
 
     async loadNodeFile(nodeName: string, fileName: string): Promise<ArrayBuffer | null> {
         try {
-            const response = await fetch(`${this.baseUrl}/node/${nodeName}/file/${fileName}`);
+            const baseFileName = fileName.includes('/') ? fileName.split('/').pop()! : fileName;
+            const response = await fetch(`${this.baseUrl}/data/files/${baseFileName}`);
             if (response.ok) {
                 return await response.arrayBuffer();
             }
@@ -84,7 +96,8 @@ class DataService {
     }
 
     async deleteNodeFile(nodeName: string, fileName: string): Promise<void> {
-        const response = await fetch(`${this.baseUrl}/node/${nodeName}/file/${fileName}`, {
+        const baseFileName = fileName.includes('/') ? fileName.split('/').pop()! : fileName;
+        const response = await fetch(`${this.baseUrl}/data/files/${baseFileName}`, {
             method: 'DELETE'
         });
         
@@ -94,4 +107,6 @@ class DataService {
     }
 }
 
-export const dataService = new DataService(); 
+// Create and export a singleton instance
+export const dataService = new DataService();
+export default dataService; 
