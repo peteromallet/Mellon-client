@@ -950,14 +950,87 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
     return () => timeline.removeEventListener('dragover', handleDragOver);
   }, []);
 
+  const handleDeleteTimestamp = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+
+    // Prevent multiple clicks during deletion
+    if (isDeletingTimestamp === selectedTimestamp) return;
+    setIsDeletingTimestamp(selectedTimestamp);
+
+    try {
+      const timestampToDelete = timestamps.find(t => t.id === selectedTimestamp);
+      if (timestampToDelete?.image) {
+        try {
+          await dataService.deleteNodeFile(nodeId, timestampToDelete.image);
+          if (imageUrls[timestampToDelete.image]) {
+            URL.revokeObjectURL(imageUrls[timestampToDelete.image]);
+            setImageUrls(prev => {
+              const newUrls = { ...prev };
+              delete newUrls[timestampToDelete.image];
+              return newUrls;
+            });
+          }
+        } catch (error) {
+          console.error('Error deleting image file:', error);
+        }
+      }
+      setTimestamps(prev => prev.filter(t => t.id !== selectedTimestamp));
+      setSelectedTimestamp(null);
+    } finally {
+      setIsDeletingTimestamp(null);
+    }
+  };
+
+  const handleDeleteImage = async (e) => {
+    console.log('Delete button clicked - START');
+    e.preventDefault();
+    e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
+    
+    // Prevent multiple clicks during deletion
+    if (isDeletingTimestamp === selectedTimestamp) return;
+    setIsDeletingTimestamp(selectedTimestamp);
+
+    try {
+      const timestampToUpdate = timestamps.find(t => t.id === selectedTimestamp);
+      if (timestampToUpdate?.image) {
+        if (imageUrls[timestampToUpdate.image]) {
+          URL.revokeObjectURL(imageUrls[timestampToUpdate.image]);
+          setImageUrls(prev => {
+            const newUrls = { ...prev };
+            delete newUrls[timestampToUpdate.image];
+            return newUrls;
+          });
+        }
+      }
+
+      // Update timestamps to remove only the image reference
+      setTimestamps(prev => prev.map(t => 
+        t.id === selectedTimestamp 
+          ? { ...t, image: null }
+          : t
+      ));
+    } catch (error) {
+      console.error('Error removing image reference:', error);
+    } finally {
+      setIsDeletingTimestamp(null);
+    }
+  };
+
   return (
     <Card sx={{ 
       width: '100%', 
       maxWidth: '800px',
       minWidth: '800px',
       minHeight: '140px',
-      bgcolor: '#1E1E1E',
-      color: '#FFFFFF'
+      bgcolor: 'background.paper',
+      borderRadius: 1,
+      '& .MuiCardContent-root': {
+        bgcolor: 'background.paper',
+        p: 2
+      }
     }}>
       <CardContent>
         <Box sx={{ 
@@ -980,10 +1053,10 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                 variant="contained"
                 component="span"
                 sx={{ 
-                  bgcolor: '#2A2A2A',
-                  color: '#FFFFFF',
+                  bgcolor: 'background.default',
+                  color: 'text.primary',
                   '&:hover': {
-                    bgcolor: '#3A3A3A'
+                    bgcolor: 'action.hover'
                   }
                 }}
               >
@@ -994,7 +1067,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
               <Typography 
                 variant="body2" 
                 sx={{ 
-                  color: '#999999',
+                  color: 'text.secondary',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -1032,10 +1105,12 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       }}
                       sx={{ 
                         p: 1, 
-                        bgcolor: '#333333',
-                        color: '#FFA500',
+                        bgcolor: 'background.paper',
+                        color: 'primary.main',
+                        border: '1px solid',
+                        borderColor: 'divider',
                         '&:hover': {
-                          bgcolor: '#444444'
+                          bgcolor: 'action.hover'
                         }
                       }}
                     >
@@ -1049,9 +1124,10 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       sx={{ 
                         px: 3, 
                         py: 1, 
-                        bgcolor: '#FFA500',
+                        bgcolor: theme => theme.palette.mode === 'light' ? theme.palette.primary.main : theme.palette.primary.dark,
+                        color: 'common.white',
                         '&:hover': {
-                          bgcolor: '#FF8C00'
+                          bgcolor: theme => theme.palette.mode === 'light' ? theme.palette.primary.dark : theme.palette.primary.main,
                         }
                       }}
                     >
@@ -1067,20 +1143,26 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                         onChange={(e) => setPlaybackRate(parseFloat(e.target.value))}
                         sx={{ 
                           width: '140px',
-                          color: '#FFA500',
+                          color: 'primary.main',
                           '& .MuiSlider-thumb': {
+                            bgcolor: 'primary.main',
                             '&:hover, &.Mui-focusVisible': {
-                              boxShadow: '0 0 0 8px rgba(255, 165, 0, 0.16)'
+                              boxShadow: theme => `0 0 0 8px ${theme.palette.primary.main}40`
                             }
                           },
+                          '& .MuiSlider-track': {
+                            bgcolor: 'primary.main',
+                          },
                           '& .MuiSlider-rail': {
-                            opacity: 0.28
+                            opacity: 0.4,
+                            bgcolor: 'primary.light'
                           }
                         }}
                       />
                       <Typography variant="body2" sx={{ 
                         width: '52px', 
-                        color: '#FFA500',
+                        color: 'primary.main',
+                        fontWeight: 'medium',
                         ml: 1
                       }}>
                         {playbackRate.toFixed(2)}x
@@ -1092,10 +1174,12 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                         onClick={() => handleZoom('out')}
                         sx={{ 
                           p: 1, 
-                          bgcolor: '#333333',
-                          color: '#FFA500',
+                          bgcolor: theme => theme.palette.mode === 'light' ? theme.palette.grey[100] : theme.palette.grey[800],
+                          color: 'primary.main',
+                          border: 1,
+                          borderColor: 'divider',
                           '&:hover': {
-                            bgcolor: '#444444'
+                            bgcolor: theme => theme.palette.mode === 'light' ? theme.palette.grey[200] : theme.palette.grey[700]
                           }
                         }}
                       >
@@ -1105,10 +1189,12 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                         onClick={() => handleZoom('in')}
                         sx={{ 
                           p: 1, 
-                          bgcolor: '#333333',
-                          color: '#FFA500',
+                          bgcolor: theme => theme.palette.mode === 'light' ? theme.palette.grey[100] : theme.palette.grey[800],
+                          color: 'primary.main',
+                          border: 1,
+                          borderColor: 'divider',
                           '&:hover': {
-                            bgcolor: '#444444'
+                            bgcolor: theme => theme.palette.mode === 'light' ? theme.palette.grey[200] : theme.palette.grey[700]
                           }
                         }}
                       >
@@ -1175,7 +1261,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       sx={{
                         position: 'relative',
                         height: '140px',
-                        bgcolor: 'grey.100',
+                        bgcolor: 'background.default',
                         width: zoom <= 1 ? '100%' : `${zoom * 100}%`,
                         minWidth: '100%',
                         cursor: isDraggingTimelineRef.current ? 'grabbing' : (zoom > 1 ? 'grab' : 'pointer'),
@@ -1422,7 +1508,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             top: '0',
                             bottom: '0',
                             width: '2px',
-                            backgroundColor: 'rgba(255, 165, 0, 0.5)',
+                            backgroundColor: 'primary.main',
+                            opacity: 0.5,
                             zIndex: 99998,
                             transform: 'translateX(-50%)',
                             left: `${mousePosition}%`,
@@ -1433,14 +1520,13 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             '& > div': {
                               width: '40px',
                               height: '60px',
-                              border: '2px solid rgba(255, 165, 0, 0.5)',
+                              border: theme => `2px solid ${theme.palette.primary.main}80`,
                               borderRadius: '4px',
-                              backgroundColor: 'rgba(255, 165, 0, 0.1)',
+                              backgroundColor: theme => `${theme.palette.primary.main}20`,
                               marginTop: '40px'
                             }
                           }}
                         >
-                          {console.log('Rendering timeline indicator:', { mousePosition, draggedOver })}
                           <div />
                         </Box>
                       )}
@@ -1466,7 +1552,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          bgcolor: 'grey.100',
+                          bgcolor: 'background.default',
                           zIndex: 0
                         }}
                       />
@@ -1485,14 +1571,14 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           zIndex: 1,
                           opacity: 0,
                           transition: 'opacity 0.2s',
-                          bgcolor: 'rgba(255, 165, 0, 0.4)',
-                          color: 'white',
+                          bgcolor: theme => `${theme.palette.primary.main}66`,
+                          color: 'text.primary',
                           padding: 0,
                           minHeight: 0,
                           fontSize: '12px',
                           lineHeight: 1,
                           '&:hover': {
-                            bgcolor: 'rgba(255, 165, 0, 0.8)'
+                            bgcolor: theme => `${theme.palette.primary.main}cc`
                           },
                           '&::before': {
                             content: '""',
@@ -1548,430 +1634,217 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                         style={{ display: 'none' }}
                       />
 
-                      {timestamps.map((stamp, index) => {
-                        const duration = audioRef.current?.duration || 1;
-                        const timePercent = parseFloat(stamp.time) / duration;
-                        const leftPercent = timePercent * 100;
-
-                        return (
+                      {timestamps.map((stamp, index) => (
+                        <Box
+                          key={stamp.id}
+                          className={`timestamp-marker ${selectedTimestamp === stamp.id ? 'selected' : ''}`}
+                          sx={{
+                            position: 'absolute',
+                            height: '100%',
+                            width: '4px',
+                            cursor: isDragging ? (draggedTimestamp === stamp.id ? 'grabbing' : 'default') : 'grab',
+                            left: `${(parseFloat(stamp.time) / (audioRef.current?.duration || 1)) * 100}%`,
+                            transform: 'translateX(-50%)',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            zIndex: draggedTimestamp === stamp.id ? 100000 : 
+                                   selectedTimestamp === stamp.id ? 99999 :
+                                   hoveredTimestamp === stamp.id ? 99998 : 1,
+                            pointerEvents: 'auto',
+                            '&::before': {
+                              content: '""',
+                              position: 'absolute',
+                              width: '2px',
+                              height: '100%',
+                              left: '50%',
+                              transform: 'translateX(-50%)',
+                              backgroundColor: draggedTimestamp === stamp.id 
+                                ? 'primary.main'
+                                : selectedTimestamp === stamp.id || hoveredTimestamp === stamp.id
+                                  ? 'primary.main'
+                                  : 'primary.light',
+                              opacity: selectedTimestamp === stamp.id || hoveredTimestamp === stamp.id || draggedTimestamp === stamp.id ? 1 : 0.7,
+                              transition: 'all 0.2s',
+                              zIndex: -1,
+                              pointerEvents: 'none'
+                            }
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isDragging) {
+                              setHoveredTimestamp(stamp.id);
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isDragging) {
+                              setHoveredTimestamp(null);
+                            }
+                          }}
+                          onClick={(e) => handleSelection(stamp.id, e)}
+                          onMouseDown={(e) => {
+                            if (e.button === 0 && 
+                                !e.target.closest('.image-delete-button') && 
+                                !e.target.closest('.image-upload-button')) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDragStart(index, e);
+                            }
+                          }}
+                        >
                           <Box
-                            key={stamp.id}
-                            className={`timestamp-marker ${selectedTimestamp === stamp.id ? 'selected' : ''}`}
                             sx={{
                               position: 'absolute',
-                              height: '100%',
-                              width: '4px',
-                              cursor: isDragging ? (draggedTimestamp === stamp.id ? 'grabbing' : 'default') : 'grab',
-                              left: `${leftPercent}%`,
+                              bottom: 0,
+                              left: '50%',
                               transform: 'translateX(-50%)',
+                              bgcolor: 'background.paper',
+                              px: 0.5,
+                              py: 0.25,
+                              borderRadius: 0.5,
+                              fontSize: '12px',
                               display: 'flex',
-                              justifyContent: 'center',
-                              zIndex: draggedTimestamp === stamp.id ? 100000 : 
-                                     selectedTimestamp === stamp.id ? 99999 :
-                                     hoveredTimestamp === stamp.id ? 99998 : 1,
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              textAlign: 'center',
+                              zIndex: 2,
                               pointerEvents: 'auto',
-                              '&::before': {
-                                content: '""',
-                                position: 'absolute',
-                                width: '2px',
-                                height: '100%',
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                backgroundColor: draggedTimestamp === stamp.id 
-                                  ? '#FFA500'
-                                  : selectedTimestamp === stamp.id || hoveredTimestamp === stamp.id
-                                    ? '#FFA500'
-                                    : 'primary.light',
-                                opacity: selectedTimestamp === stamp.id || hoveredTimestamp === stamp.id || draggedTimestamp === stamp.id ? 1 : 0.7,
-                                transition: 'all 0.2s',
-                                zIndex: -1,
-                                pointerEvents: 'none'
-                              },
-                              '& > *': {
-                                zIndex: 'inherit',
-                                pointerEvents: isDragging && draggedTimestamp !== stamp.id ? 'none' : 'auto'
-                              },
-                              '&:hover, &.selected': {
-                                zIndex: draggedTimestamp === stamp.id ? 100000 : 99999
-                              }
-                            }}
-                            onMouseEnter={(e) => {
-                              if (!isDragging) {
-                                setHoveredTimestamp(stamp.id);
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              if (!isDragging) {
-                                setHoveredTimestamp(null);
-                              }
-                            }}
-                            onClick={(e) => handleSelection(stamp.id, e)}
-                            onMouseDown={(e) => {
-                              if (e.button === 0 && 
-                                  !e.target.closest('.image-delete-button') && 
-                                  !e.target.closest('.image-upload-button')) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleDragStart(index, e);
-                              }
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggedOver(stamp.id);
-                            }}
-                            onDragLeave={() => setDraggedOver(null)}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggedOver(null);
-                              
-                              console.log('Timeline: Drop on existing timestamp', {
-                                timestampId: stamp.id,
-                                types: e.dataTransfer.types,
-                                items: Array.from(e.dataTransfer.items).map(item => ({
-                                  kind: item.kind,
-                                  type: item.type
-                                }))
-                              });
-                              
-                              // Try to get file from items first
-                              const items = Array.from(e.dataTransfer.items);
-                              const fileItem = items.find(item => item.kind === 'file');
-                              if (fileItem) {
-                                const file = fileItem.getAsFile();
-                                if (file && file.type.startsWith('image/')) {
-                                  handleImageDrop(file, e, stamp.id);
-                                }
-                              } else {
-                                // Try to get image URL from text data
-                                const imageUrl = e.dataTransfer.getData('text/plain');
-                                if (imageUrl) {
-                                  console.log('Timeline: Got image URL for existing timestamp', { imageUrl });
-                                  handleImageDrop(imageUrl, e, stamp.id);
-                                } else {
-                                  console.log('Timeline: No valid image found for existing timestamp');
-                                }
-                              }
+                              width: 'fit-content',
+                              minWidth: '36px',
+                              height: '20px'
                             }}
                           >
-                            <Box
-                              sx={{
-                                position: 'absolute',
-                                bottom: 0,
-                                left: '50%',
-                                transform: 'translateX(-50%)',
-                                bgcolor: 'background.paper',
-                                px: 0.5,
-                                py: 0.25,
-                                borderRadius: 0.5,
-                                fontSize: '12px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                textAlign: 'center',
-                                zIndex: 2,
-                                pointerEvents: 'auto',
-                                width: 'fit-content',
-                                minWidth: '36px',
-                                height: '20px',
-                                '& > *': {
-                                  zIndex: 'inherit',
-                                },
-                                '& > span': {
-                                  pointerEvents: 'auto',
-                                  padding: '2px 4px'
-                                },
-                                '&:hover': {
-                                  '& .delete-button': {
-                                    opacity: isDeletingTimestamp === stamp.id ? 0.5 : 1,
-                                    visibility: 'visible',
-                                    pointerEvents: isDeletingTimestamp === stamp.id ? 'none' : 'auto'
-                                  }
-                                },
-                                '& .delete-button': {
-                                  opacity: 0,
-                                  visibility: isDragging ? 'hidden' : 'visible',
-                                  transition: 'opacity 0.2s, visibility 0.2s'
-                                },
-                                ...(draggedOver === stamp.id && {
-                                  '&::before': {
-                                    content: '""',
-                                    position: 'absolute',
-                                    top: '-80px',
-                                    left: '-10px',
-                                    right: '-10px',
-                                    bottom: '-4px',
-                                    border: '2px solid rgba(255, 165, 0, 0.5)',
-                                    borderRadius: '4px',
-                                    backgroundColor: 'rgba(255, 165, 0, 0.1)',
-                                    zIndex: -1
-                                  }
-                                })
-                              }}
-                            >
-                              {draggedOver === stamp.id && (
-                                <Box
-                                  sx={{
-                                    position: 'absolute',
-                                    top: '-80px',
-                                    left: '-10px',
-                                    right: '-10px',
-                                    bottom: '-4px',
-                                    border: '2px solid rgba(255, 165, 0, 0.5)',
-                                    borderRadius: '4px',
-                                    backgroundColor: 'rgba(255, 165, 0, 0.1)',
-                                    zIndex: -1
-                                  }}
-                                />
-                              )}
-                              <Box className="upload-hover-area" />
-                              {stamp.image && imageUrls[stamp.image] && (
-                                <Box
-                                  sx={{
-                                    position: 'absolute',
-                                    bottom: '100%',
-                                    left: '50%',
-                                    transform: draggedTimestamp === stamp.id 
-                                      ? 'translateX(-50%) scale(1.5) translateY(-8px)'
-                                      : (hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging
-                                        ? 'translateX(-50%) scale(1.5) translateY(-8px)'
-                                        : 'translateX(-50%) scale(1) translateY(0)',
-                                    width: 77,
-                                    height: 77,
-                                    marginBottom: '8px',
-                                    borderRadius: 1,
-                                    overflow: 'visible',
-                                    border: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
-                                      ? '1px solid rgba(255, 255, 255, 0.4)'
-                                      : '1px solid rgba(255, 255, 255, 0.2)',
-                                    boxShadow: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
-                                      ? '0 8px 16px rgba(0,0,0,0.3)'
-                                      : '0 2px 4px rgba(0,0,0,0.1)',
-                                    transition: draggedTimestamp === stamp.id 
-                                      ? 'none' 
-                                      : 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    cursor: 'move',
-                                    zIndex: 1000000,
-                                    pointerEvents: isDragging ? (draggedTimestamp === stamp.id ? 'auto' : 'none') : 'auto',
-                                    '&:hover': {
-                                      '& .image-delete-button': {
-                                        opacity: isDragging ? 0 : 1,
-                                        transform: isDragging ? 'scale(0.8)' : 'scale(1)',
-                                        visibility: isDragging ? 'hidden' : 'visible'
-                                      }
-                                    }
-                                  }}
-                                >
-                                  <Box
-                                    component="img"
-                                    src={imageUrls[stamp.image]}
-                                    alt={`Timestamp ${stamp.time}`}
-                                    sx={{
-                                      width: '100%',
-                                      height: '100%',
-                                      objectFit: 'cover',
-                                      pointerEvents: 'none',
-                                      borderRadius: 'inherit'
-                                    }}
-                                  />
-                                  <IconButton
-                                    className="image-delete-button"
-                                    onClick={async (e) => {
-                                      console.log('Delete button clicked - START');
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      e.nativeEvent.stopImmediatePropagation();
-                                      
-                                      // Prevent multiple clicks during deletion
-                                      if (isDeletingTimestamp === stamp.id) return;
-                                      setIsDeletingTimestamp(stamp.id);
-
-                                      try {
-                                        if (stamp.image) {
-                                          if (imageUrls[stamp.image]) {
-                                            URL.revokeObjectURL(imageUrls[stamp.image]);
-                                            setImageUrls(prev => {
-                                              const newUrls = { ...prev };
-                                              delete newUrls[stamp.image];
-                                              return newUrls;
-                                            });
-                                          }
-                                        }
-
-                                        // Update timestamps to remove only the image reference
-                                        setTimestamps(prev => prev.map(t => 
-                                          t.id === stamp.id 
-                                            ? { ...t, image: null }
-                                            : t
-                                        ));
-                                      } catch (error) {
-                                        console.error('Error removing image reference:', error);
-                                      } finally {
-                                        setIsDeletingTimestamp(null);
-                                      }
-                                    }}
-                                    onMouseDown={(e) => {
-                                      console.log('Delete button mouse down');
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      e.nativeEvent.stopImmediatePropagation();
-                                    }}
-                                    sx={{
-                                      position: 'absolute',
-                                      top: 0,
-                                      right: 0,
-                                      width: 16,
-                                      height: 16,
-                                      padding: 0,
-                                      minWidth: 'unset',
-                                      opacity: 0,
-                                      transform: 'scale(0.8)',
-                                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                                      border: '1px solid rgba(255, 255, 255, 0.3)',
-                                      color: 'white',
-                                      fontSize: '12px',
-                                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                      zIndex: 31,
-                                      pointerEvents: isDragging ? 'none' : 'auto',
-                                      visibility: isDragging ? 'hidden' : 'visible',
-                                      borderRadius: '0 4px 0 4px',
-                                      '&:hover': {
-                                        backgroundColor: 'rgba(255, 0, 0, 0.6)',
-                                        border: '1px solid rgba(255, 255, 255, 0.5)',
-                                        transform: 'scale(1.1)'
-                                      },
-                                      '& .MuiTouchRipple-root': {
-                                        display: 'none'
-                                      }
-                                    }}
-                                  >
-                                    ×
-                                  </IconButton>
-                                </Box>
-                              )}
-                              {!stamp.image && !draggedTimestamp && (
-                                <Box
-                                  sx={{
-                                    position: 'absolute',
-                                    bottom: '100%',
-                                    left: '50%',
-                                    transform: 'translateX(-50%)',
-                                    marginBottom: '14px',
-                                    zIndex: 999999,
-                                    padding: '4px',
-                                    isolation: 'isolate'
-                                  }}
-                                >
-                                  <IconButton
-                                    className="image-upload-button"
-                                    size="small"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      setActiveUploadId(stamp.id);
-                                      if (imageFileInputRef.current) {
-                                        imageFileInputRef.current.value = '';
-                                        imageFileInputRef.current.click();
-                                      }
-                                    }}
-                                    onMouseDown={e => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                    }}
-                                    sx={{ 
-                                      p: 0.5,
-                                      bgcolor: 'grey.500',
-                                      color: 'white',
-                                      width: '24px',
-                                      height: '24px',
-                                      opacity: hoveredTimestamp === stamp.id && !isDragging ? 1 : 0,
-                                      visibility: hoveredTimestamp === stamp.id && !isDragging ? 'visible' : 'hidden',
-                                      transition: 'opacity 0.2s',
-                                      position: 'relative',
-                                      zIndex: 999999,
-                                      '&:hover': {
-                                        bgcolor: 'grey.600'
-                                      }
-                                    }}
-                                  >
-                                    <AddPhotoAlternateIcon sx={{ fontSize: 16 }} />
-                                  </IconButton>
-                                </Box>
-                              )}
-                              <Typography sx={{ fontSize: 'inherit', color: 'text.primary' }}>
-                                {parseFloat(stamp.time).toFixed(2)}s
-                              </Typography>
-                              <Button
-                                className="delete-button"
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  e.nativeEvent.stopImmediatePropagation();
-
-                                  // Prevent multiple clicks during deletion
-                                  if (isDeletingTimestamp === stamp.id) return;
-                                  setIsDeletingTimestamp(stamp.id);
-
-                                  try {
-                                    if (stamp.image) {
-                                      try {
-                                        await dataService.deleteNodeFile(nodeId, stamp.image);
-                                        if (imageUrls[stamp.image]) {
-                                          URL.revokeObjectURL(imageUrls[stamp.image]);
-                                          setImageUrls(prev => {
-                                            const newUrls = { ...prev };
-                                            delete newUrls[stamp.image];
-                                            return newUrls;
-                                          });
-                                        }
-                                      } catch (error) {
-                                        console.error('Error deleting image file:', error);
-                                      }
-                                    }
-                                    setTimestamps(prev => prev.filter(t => t.id !== stamp.id));
-                                  } finally {
-                                    setIsDeletingTimestamp(null);
-                                  }
-                                }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  e.nativeEvent.stopImmediatePropagation();
-                                }}
+                            {stamp.image && imageUrls[stamp.image] && (
+                              <Box
                                 sx={{
                                   position: 'absolute',
-                                  right: -4,
-                                  top: -4,
-                                  width: 16,
-                                  height: 16,
-                                  minWidth: 'unset',
-                                  padding: 0,
-                                  color: '#FFA500',
-                                  bgcolor: 'transparent',
-                                  fontSize: '14px',
-                                  lineHeight: 1,
-                                  cursor: isDeletingTimestamp === stamp.id ? 'not-allowed' : 'pointer',
-                                  zIndex: 1000,
-                                  opacity: isDeletingTimestamp === stamp.id ? 0.5 : 0,
-                                  transform: 'scale(0.8)',
-                                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                  pointerEvents: isDeletingTimestamp === stamp.id ? 'none' : 'auto',
-                                  visibility: isDragging ? 'hidden' : 'visible',
-                                  '&:hover': {
-                                    color: '#FF4444',
-                                    transform: 'scale(1.1)'
-                                  }
+                                  bottom: '100%',
+                                  left: '50%',
+                                  transform: draggedTimestamp === stamp.id 
+                                    ? 'translateX(-50%) scale(1.5) translateY(-8px)'
+                                    : (hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging
+                                      ? 'translateX(-50%) scale(1.5) translateY(-8px)'
+                                      : 'translateX(-50%) scale(1) translateY(0)',
+                                  width: 77,
+                                  height: 77,
+                                  marginBottom: '8px',
+                                  borderRadius: 1,
+                                  overflow: 'visible',
+                                  border: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
+                                    ? theme => `1px solid ${theme.palette.primary.main}66`
+                                    : theme => `1px solid ${theme.palette.primary.main}33`,
+                                  boxShadow: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
+                                    ? theme => `0 8px 16px ${theme.palette.common.black}4d`
+                                    : theme => `0 2px 4px ${theme.palette.common.black}1a`,
+                                  transition: draggedTimestamp === stamp.id 
+                                    ? 'none' 
+                                    : 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                  cursor: 'move',
+                                  zIndex: 1000000
                                 }}
                               >
-                                <div className="click-area" />
-                                <div className="hover-effect" />
-                                ×
-                              </Button>
-                            </Box>
+                                <Box
+                                  component="img"
+                                  src={imageUrls[stamp.image]}
+                                  alt={`Timestamp ${stamp.time}`}
+                                  sx={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    pointerEvents: 'none',
+                                    borderRadius: 'inherit'
+                                  }}
+                                />
+                                <IconButton
+                                  className="image-delete-button"
+                                  onClick={handleDeleteImage}
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    e.nativeEvent.stopImmediatePropagation();
+                                  }}
+                                  sx={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    right: 0,
+                                    width: 16,
+                                    height: 16,
+                                    padding: 0,
+                                    minWidth: 'unset',
+                                    opacity: 0,
+                                    transform: 'scale(0.8)',
+                                    backgroundColor: 'action.disabledBackground',
+                                    border: theme => `1px solid ${theme.palette.primary.main}4d`,
+                                    color: 'text.primary',
+                                    fontSize: '12px',
+                                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    zIndex: 31,
+                                    visibility: isDragging ? 'hidden' : 'visible',
+                                    borderRadius: '0 4px 0 4px',
+                                    '&:hover': {
+                                      backgroundColor: 'error.main',
+                                      border: theme => `1px solid ${theme.palette.primary.main}80`,
+                                      transform: 'scale(1.1)'
+                                    }
+                                  }}
+                                >
+                                  ×
+                                </IconButton>
+                              </Box>
+                            )}
+                            {!stamp.image && !draggedTimestamp && (
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  bottom: '100%',
+                                  left: '50%',
+                                  transform: 'translateX(-50%)',
+                                  marginBottom: '14px',
+                                  zIndex: 999999,
+                                  padding: '4px',
+                                  isolation: 'isolate'
+                                }}
+                              >
+                                <IconButton
+                                  className="image-upload-button"
+                                  size="small"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setActiveUploadId(stamp.id);
+                                    if (imageFileInputRef.current) {
+                                      imageFileInputRef.current.value = '';
+                                      imageFileInputRef.current.click();
+                                    }
+                                  }}
+                                  onMouseDown={e => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                  }}
+                                  sx={{ 
+                                    p: 0.5,
+                                    bgcolor: 'action.selected',
+                                    color: 'text.primary',
+                                    width: '24px',
+                                    height: '24px',
+                                    opacity: hoveredTimestamp === stamp.id && !isDragging ? 1 : 0,
+                                    visibility: hoveredTimestamp === stamp.id && !isDragging ? 'visible' : 'hidden',
+                                    transition: 'opacity 0.2s',
+                                    position: 'relative',
+                                    zIndex: 999999,
+                                    '&:hover': {
+                                      bgcolor: 'action.hover'
+                                    }
+                                  }}
+                                >
+                                  <AddPhotoAlternateIcon sx={{ fontSize: 16 }} />
+                                </IconButton>
+                              </Box>
+                            )}
+                            <Typography sx={{ fontSize: 'inherit', color: 'text.primary' }}>
+                              {parseFloat(stamp.time).toFixed(2)}s
+                            </Typography>
                           </Box>
-                        );
-                      })}
+                        </Box>
+                      ))}
 
                       <Box
                         sx={{
@@ -1984,24 +1857,6 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           zIndex: 99999
                         }}
                       />
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          bottom: 0,
-                          left: `${(currentTime / (audioRef.current?.duration || 1)) * 100}%`,
-                          transform: 'translateX(-50%)',
-                          bgcolor: 'background.paper',
-                          px: 0.5,
-                          py: 0.25,
-                          borderRadius: 0.5,
-                          fontSize: '12px',
-                          color: 'error.main',
-                          fontWeight: 'bold',
-                          zIndex: 999999
-                        }}
-                      >
-                        {currentTime.toFixed(2)}s
-                      </Box>
                     </Box>
                   </Box>
                 </Box>

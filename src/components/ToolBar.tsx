@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useContext } from 'react'
 import Box from '@mui/material/Box'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
@@ -16,6 +16,7 @@ import OutlinedInput from '@mui/material/OutlinedInput'
 import SearchIcon from '@mui/icons-material/Search'
 import Accordion from '@mui/material/Accordion'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import { ViewModeContext } from '../main'
 
 const sidebarWidth = 260
 
@@ -50,8 +51,8 @@ export default function LeftSidebar() {
   const theme = useTheme()
   const { nodeRegistry } = useNodeRegistryState(selectNodeRegistryState, shallow);
 
-  // View mode state
-  const [viewMode, setViewMode] = useState('workflow');
+  // View mode state from context
+  const { viewMode, setViewMode } = useContext(ViewModeContext);
   const handleViewModeChange = (_: any, newMode: string) => {
     if (newMode !== null) {
       setViewMode(newMode);
@@ -168,22 +169,22 @@ export default function LeftSidebar() {
             <Accordion disableGutters key={module} sx={{
               borderBottom: `1px solid ${theme.palette.divider}`,
               boxShadow: 'none',
-              backgroundColor: '#1a1a1a',
+              backgroundColor: theme.palette.background.default,
               fontSize: '13px',
               p: 0, m: 0,
               '&:before': {
                 backgroundColor: 'transparent',
               },
               '.MuiAccordionSummary-root': {
-                backgroundColor: '#1a1a1a',
+                backgroundColor: theme.palette.background.default,
                 '&:hover': {
-                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  backgroundColor: theme.palette.action.hover,
                 },
               },
               '.MuiAccordionDetails-root': {
-                backgroundColor: '#1a1a1a',
+                backgroundColor: theme.palette.background.default,
                 padding: '8px 4px',
-              },
+              }
             }}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 {module.replace(/[_-]/g, ' ').replace(/\b\w/g, char => char.toUpperCase())}

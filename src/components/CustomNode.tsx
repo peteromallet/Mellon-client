@@ -684,25 +684,26 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
             <Box
                 component="header"
                 sx={{
-                    color: theme.palette.common.white,
+                    color: theme.palette.text.primary,
                     padding: '8px 10px 8px 10px',
                     borderTopWidth: '6px',
                     borderTopStyle: 'solid',
-                    borderTopColor: 'rgba(0, 0, 0, 0.2)',
-                    backgroundColor: '#121212',
+                    borderTopColor: theme => theme.palette.mode === 'light' 
+                        ? theme.palette.primary.main 
+                        : theme.palette.primary.dark,
+                    backgroundColor: theme => theme.palette.mode === 'light'
+                        ? theme.palette.grey[100]
+                        : theme.palette.grey[900],
                     fontSize: '15px',
-                    textShadow: '0px 2px 0px rgba(0, 0, 0, 0.75)',
+                    fontWeight: 500,
+                    boxShadow: 1
                 }}
             >
                 {props.data.label}
             </Box>
             <Box
-                //component="form"
-                //noValidate
-                //autoComplete="off"
                 className="nodrag"
                 sx={{
-                    //borderTop: '4px solid rgba(0, 0, 0, 0.2)',
                     backgroundColor: theme.palette.background.paper,
                     paddingLeft: 1,
                     paddingRight: 1,
@@ -713,6 +714,31 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                     '& .MuiAccordionDetails-root > .MuiStack-root': {
                         mb: 1,
                     },
+                    '& .react-flow__handle': {
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '3px',
+                        backgroundColor: theme.palette.mode === 'light' ? '#f0f4fa' : theme.palette.grey[800],
+                        border: `1px solid ${theme.palette.mode === 'light' ? theme.palette.primary.light : theme.palette.grey[600]}`,
+                        '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: '6px',
+                            height: '6px',
+                            backgroundColor: theme.palette.mode === 'light' ? theme.palette.primary.main : theme.palette.grey[600],
+                            borderRadius: '1px',
+                        }
+                    },
+                    '& .react-flow__handle:hover': {
+                        backgroundColor: theme.palette.mode === 'light' ? theme.palette.primary.light : theme.palette.primary.dark,
+                        border: `1px solid ${theme.palette.primary.main}`,
+                        '&::after': {
+                            backgroundColor: theme.palette.primary.main,
+                        }
+                    },
                 }}
             >
                 {fields}
@@ -722,7 +748,11 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                 className="nodrag"
                 sx={{
                     padding: 0,
-                    backgroundColor: '#121212',
+                    backgroundColor: theme => theme.palette.mode === 'light'
+                        ? theme.palette.grey[100]
+                        : theme.palette.grey[900],
+                    borderTop: 1,
+                    borderColor: 'divider'
                 }}
             >
                 <Box sx={{ width: '100%' }}>
@@ -772,7 +802,7 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                             title="Clear Data"
                             onClick={onClearCache}
                             disabled={!cache}
-                            color="secondary"
+                            color="primary"
                             variant="filled"
                             sx={{
                                 height: '24px',
@@ -782,6 +812,16 @@ const CustomNode = (props: NodeProps<CustomNodeType>) => {
                                 '& .MuiChip-icon': {
                                     fontSize: '18px',
                                 },
+                                bgcolor: theme => theme.palette.mode === 'light' 
+                                    ? theme.palette.primary.dark  // Orange in tool mode
+                                    : theme.palette.primary.dark,   // Orange in workflow mode
+                                color: theme => theme.palette.common.white,
+                                '&:hover': {
+                                    bgcolor: theme => theme.palette.mode === 'light'
+                                        ? theme.palette.primary.main  // Lighter orange on hover in tool mode
+                                        : theme.palette.primary.main,   // Lighter orange on hover in workflow mode
+                                    color: theme => theme.palette.common.white
+                                }
                             }}
                         />
                     </Stack>

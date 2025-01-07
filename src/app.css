@@ -9,11 +9,15 @@
 }
 
 .react-flow__handle {
-  background-color: rgb(100, 100, 100);
+  background-color: rgb(166, 177, 225);
   width: 12px;
   height: 9px;
   border-radius: 1px;
-  outline: 4px solid #121212;
+  outline: none;
+}
+
+.react-flow__handle:hover {
+  background-color: rgb(136, 149, 214);
 }
 
 /*
