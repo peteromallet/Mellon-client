@@ -4,7 +4,10 @@ import requests
 import uvicorn
 import json
 import fcntl
-from typing import Dict, Optional
+import psutil
+import datetime
+import anthropic
+from typing import Dict, Optional, List
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +45,13 @@ class GenerateRequest(BaseModel):
 class BatchGenerateRequest(BaseModel):
     prompts: Dict[int, str]
     fal_key: Optional[str] = None
+
+# Add new models for Claude API
+class PromptGenerateRequest(BaseModel):
+    topic: str
+    examples: List[str]
+    mode: str
+    numToGenerate: Optional[int] = 5
 
 # Node data helper functions
 def atomic_write_json(data_path, data):
@@ -97,26 +107,133 @@ async def test():
     """Test endpoint to verify server is working"""
     return {"status": "ok", "message": "Server is running"}
 
+def get_process_memory():
+    """Get current process memory usage in MB"""
+    process = psutil.Process(os.getpid())
+    return process.memory_info().rss / 1024 / 1024
+
+def log_performance(message: str, memory_before: float = None):
+    """Log a performance message with timestamp and memory usage"""
+    current_memory = get_process_memory()
+    timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+    memory_diff = f"(Δ: {current_memory - memory_before:.1f}MB)" if memory_before is not None else ""
+    print(f"[{timestamp}] {message} - Memory: {current_memory:.1f}MB {memory_diff}")
+    return current_memory
+
+class NodeCache:
+    def __init__(self, write_delay=5):
+        self.cache = {}
+        self.last_write = {}
+        self.dirty = set()
+        self.write_delay = write_delay
+        self.lock = asyncio.Lock()
+        self.stats = {
+            "total_writes": 0,
+            "total_bytes_written": 0,
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "peak_memory": 0,
+        }
+        log_performance("Initialized NodeCache")
+
+    async def get(self, node_name: str):
+        mem_before = get_process_memory()
+        if node_name not in self.cache:
+            self.stats["cache_misses"] += 1
+            log_performance(f"Cache MISS for {node_name}", mem_before)
+            data_dir, _ = ensure_dirs()
+            data_path = os.path.join(data_dir, node_name, 'data.json')
+            if os.path.exists(data_path):
+                try:
+                    with open(data_path, 'r') as f:
+                        start_time = time.time()
+                        self.cache[node_name] = json.load(f)
+                        log_performance(f"Loaded {node_name} from disk in {(time.time() - start_time)*1000:.1f}ms")
+                except json.JSONDecodeError:
+                    self.cache[node_name] = {}
+            else:
+                self.cache[node_name] = {}
+        else:
+            self.stats["cache_hits"] += 1
+            log_performance(f"Cache HIT for {node_name}", mem_before)
+        
+        # Track peak memory
+        current_memory = get_process_memory()
+        self.stats["peak_memory"] = max(self.stats["peak_memory"], current_memory)
+        return self.cache[node_name]
+
+    async def set(self, node_name: str, data: dict):
+        async with self.lock:
+            mem_before = get_process_memory()
+            data_size = len(str(data))
+            log_performance(f"Setting data for {node_name} (size: {data_size:,} bytes)", mem_before)
+            
+            self.cache[node_name] = data
+            self.dirty.add(node_name)
+            current_time = time.time()
+            
+            if (node_name not in self.last_write or 
+                current_time - self.last_write.get(node_name, 0) >= self.write_delay):
+                await self.flush(node_name)
+            else:
+                time_until_write = self.write_delay - (current_time - self.last_write.get(node_name, 0))
+                log_performance(f"Delaying write for {node_name} - {time_until_write:.1f}s until next write")
+
+    async def flush(self, node_name: str):
+        if node_name in self.dirty:
+            mem_before = get_process_memory()
+            start_time = time.time()
+            
+            data_dir, _ = ensure_dirs()
+            node_dir = os.path.join(data_dir, node_name)
+            os.makedirs(node_dir, exist_ok=True)
+            data_path = os.path.join(node_dir, 'data.json')
+            
+            data_size = len(str(self.cache[node_name]))
+            
+            atomic_write_json(data_path, self.cache[node_name])
+            write_time = time.time() - start_time
+            
+            self.last_write[node_name] = time.time()
+            self.dirty.remove(node_name)
+            
+            self.stats["total_writes"] += 1
+            self.stats["total_bytes_written"] += data_size
+            
+            log_performance(
+                f"Wrote {data_size:,} bytes to disk for {node_name} in {write_time*1000:.1f}ms", 
+                mem_before
+            )
+            
+            print(f"\nCache Performance Stats:")
+            print(f"  Total writes: {self.stats['total_writes']:,}")
+            print(f"  Total bytes written: {self.stats['total_bytes_written']:,}")
+            print(f"  Cache hits/misses: {self.stats['cache_hits']:,}/{self.stats['cache_misses']:,}")
+            print(f"  Current memory: {get_process_memory():.1f}MB")
+            print(f"  Peak memory: {self.stats['peak_memory']:.1f}MB")
+
+    async def delete(self, node_name: str):
+        async with self.lock:
+            mem_before = get_process_memory()
+            if node_name in self.cache:
+                data_size = len(str(self.cache[node_name]))
+                log_performance(f"Deleting {node_name} from cache (size: {data_size:,} bytes)", mem_before)
+                del self.cache[node_name]
+            if node_name in self.dirty:
+                self.dirty.remove(node_name)
+            if node_name in self.last_write:
+                del self.last_write[node_name]
+
+# Initialize the cache
+node_cache = NodeCache()
+
+# Replace the node data endpoints with cached versions
 @app.get("/node/{node_name}/data")
 async def get_node_data(node_name: str):
     """Get node data"""
     try:
-        data_dir, _ = ensure_dirs()
-        data_path = os.path.join(data_dir, node_name, 'data.json')
-        
-        if not os.path.exists(data_path):
-            raise HTTPException(status_code=404, detail="Data not found")
-            
-        try:
-            with open(data_path, 'r') as f:
-                data = json.load(f)
-                return data
-        except json.JSONDecodeError:
-            os.remove(data_path)
-            raise HTTPException(status_code=404, detail="Invalid data file")
-            
-    except HTTPException as e:
-        raise e
+        data = await node_cache.get(node_name)
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -124,14 +241,8 @@ async def get_node_data(node_name: str):
 async def post_node_data(node_name: str, data: dict):
     """Save node data"""
     try:
-        data_dir, _ = ensure_dirs()
-        node_dir = os.path.join(data_dir, node_name)
-        os.makedirs(node_dir, exist_ok=True)
-        data_path = os.path.join(node_dir, 'data.json')
-        
-        atomic_write_json(data_path, data)
+        await node_cache.set(node_name, data)
         return {"status": "success"}
-            
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -139,6 +250,7 @@ async def post_node_data(node_name: str, data: dict):
 async def delete_node_data(node_name: str):
     """Delete node data"""
     try:
+        await node_cache.delete(node_name)
         data_dir, _ = ensure_dirs()
         node_dir = os.path.join(data_dir, node_name)
         data_path = os.path.join(node_dir, 'data.json')
@@ -405,6 +517,114 @@ async def generate_batch_stream_endpoint(request: BatchGenerateRequest):
         stream_batch_generation(request.prompts, request.fal_key),
         headers=headers
     )
+
+# Add Claude client initialization
+def get_claude_client():
+    api_key = os.getenv('CLAUDE_API_KEY')
+    if not api_key:
+        raise ValueError("CLAUDE_API_KEY not found in environment variables")
+    return anthropic.Anthropic(api_key=api_key)
+
+async def generate_prompts_with_claude(topic: str, examples: List[str], mode: str, num_to_generate: int = 5) -> List[str]:
+    """Generate prompts using Claude API."""
+    client = get_claude_client()
+    
+    # Construct the system message and user message based on mode
+    if mode == "add":
+        system_msg = "You are a creative prompt generator. Your task is to add new prompts to an existing list while maintaining the same style and theme. Each new prompt should be unique and different from the existing ones."
+        user_msg = f"""Here is a topic and some existing prompts. Add {num_to_generate} new prompts that complement the existing ones.
+        
+Topic: {topic}
+
+Existing prompts:
+{chr(10).join(f'{i+1}. {example}' for i, example in enumerate(examples) if example.strip())}
+
+Requirements:
+1. Generate exactly {num_to_generate} NEW prompts that would fit well with the existing ones
+2. Each new prompt MUST be unique and different from ALL existing prompts
+3. Maintain the same style, tone, and format as the examples
+4. Each prompt should be unique but thematically consistent
+5. Output ONLY the new prompts, one per line - DON'T add numbering or other formatting
+6. Do NOT repeat or rephrase any existing prompts
+"""
+
+    elif mode == "edit":
+        system_msg = "You are a prompt editor and improver. Your task is to enhance existing prompts while maintaining their core meaning and intent. Do not add or remove any prompts."
+        user_msg = f"""Here are some prompts that need to be improved. Edit them to be more effective while keeping their original intent.
+        
+Topic: {topic}
+
+Prompts to improve:
+{chr(10).join(f'{i+1}. {example}' for i, example in enumerate(examples) if example.strip())}
+
+Requirements:
+1. Return EXACTLY the same number of prompts as provided - do not add or remove any
+2. Improve each prompt based on user instructions while keeping its core meaning intact
+3. Make them more clear and engaging while preserving the original intent
+4. Do NOT change the fundamental structure or purpose of any prompt - DO NOT add numbering or other formatting
+5. Output ONLY the improved prompts, one per line, in the same order
+"""
+
+    else:  # new
+        system_msg = "You are a creative prompt generator. Your task is to generate entirely new prompts based on a topic and example style."
+        user_msg = f"""Generate new prompts based on this topic, using the examples only as a style reference.
+        
+Topic: {topic}
+
+Style examples:
+{chr(10).join(f'{i+1}. {example}' for i, example in enumerate(examples) if example.strip())}
+
+Requirements:
+1. Generate exactly {num_to_generate} completely new prompts about the topic
+2. Use the examples only as a reference for style/format - do not copy the examples verbatim
+3. Be creative and diverse in your approach
+4. Output ONLY the new prompts, one per line - DON'T add numbering or other formatting
+
+"""
+    
+    try:
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1000,
+            temperature=1,
+            system=system_msg,
+            messages=[
+                {"role": "user", "content": user_msg}
+            ]
+        )
+        
+        # Parse response and extract prompts
+        response_text = message.content[0].text
+        prompts = [line.strip() for line in response_text.split('\n') if line.strip()]
+        
+        # For edit mode, ensure we don't return more prompts than we received
+        if mode == "edit":
+            if len(prompts) != len(examples):
+                print(f"Warning: Claude returned {len(prompts)} prompts but expected {len(examples)}")
+                prompts = prompts[:len(examples)]  # Truncate if too many
+                if len(prompts) < len(examples):  # Pad if too few
+                    prompts.extend(examples[len(prompts):])
+            return prompts
+        else:
+            return prompts[:num_to_generate]  # For add and new modes, return requested number
+        
+    except Exception as e:
+        print(f"Claude API error: {str(e)}")  # Add debug logging
+        raise HTTPException(status_code=500, detail=f"Error generating prompts: {str(e)}")
+
+@app.post("/generate-prompts")
+async def generate_prompts_endpoint(request: PromptGenerateRequest):
+    """Generate prompts using Claude API."""
+    try:
+        prompts = await generate_prompts_with_claude(
+            request.topic,
+            request.examples,
+            request.mode,
+            request.numToGenerate
+        )
+        return {"prompts": prompts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     print(f"Server starting in directory: {os.getcwd()}")

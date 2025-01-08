@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Stack, TextField, IconButton, Button, Paper, Box, Typography, Tooltip } from '@mui/material';
+import { Stack, TextField, IconButton, Button, Paper, Box, Typography, Tooltip, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import HeightIcon from '@mui/icons-material/Height';
 import { Handle, Position } from '@xyflow/react';
 import { useNodeState } from '../stores/nodeStore';
 
@@ -14,10 +15,13 @@ const PromptList = ({ nodeId, nodeData }) => {
   const [hoveredIndex, setHoveredIndex] = useState(null);
   const [hiddenPrompts, setHiddenPrompts] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(null);
+  const [heightMode, setHeightMode] = useState('flexible'); // 'flexible' or 'fixed'
   const [editingIndex, setEditingIndex] = useState(null);
   const inputRefs = useRef([]);
+  const lastUpdateRef = useRef(null);
   const setParamValue = useNodeState((state) => state.setParamValue);
   const [expandedHiddenIndex, setExpandedHiddenIndex] = useState(null);
+  const updateTimeoutRef = useRef(null);
 
   const handlePromptChange = (index, value) => {
     const newPrompts = [...prompts];
@@ -31,7 +35,15 @@ const PromptList = ({ nodeId, nodeData }) => {
       .filter((_, index) => !hidden.includes(index))
       .filter(p => p.trim())
       .map(p => p.trim());
-    setParamValue(nodeId, 'prompts', visiblePrompts.length > 0 ? visiblePrompts : ['']);
+    
+    // Ensure we always have a non-empty array to trigger updates
+    const updatedPrompts = visiblePrompts.length > 0 ? visiblePrompts : [''];
+    
+    // Update our ref to prevent loops
+    lastUpdateRef.current = JSON.stringify(updatedPrompts);
+    
+    // Force a new array reference to ensure React detects the change
+    setParamValue(nodeId, 'prompts', [...updatedPrompts]);
   };
 
   const addPrompt = () => {
@@ -83,7 +95,7 @@ const PromptList = ({ nodeId, nodeData }) => {
           setExpandedHiddenIndex(nextIndex);
         }
       }
-    } else if (e.key === 'w' && !e.metaKey && !e.ctrlKey && !e.altKey && editingIndex !== index) {
+    } else if ((e.key === 'w' || e.key === 'Enter') && !e.metaKey && !e.ctrlKey && !e.altKey && editingIndex !== index) {
       e.preventDefault();
       setEditingIndex(index);
     } else if (e.key === 'Escape' && editingIndex === index) {
@@ -135,13 +147,36 @@ const PromptList = ({ nodeId, nodeData }) => {
   };
 
   useEffect(() => {
-    updateDownstreamPrompts(prompts, hiddenPrompts);
-  }, [prompts, hiddenPrompts]);
+    // Update prompts when nodeData changes
+    const newPrompts = nodeData?.params?.prompts?.value;
+    if (Array.isArray(newPrompts)) {
+      const newPromptsStr = JSON.stringify(newPrompts);
+      const currentPromptsStr = JSON.stringify(prompts);
+      
+      // Only update if prompts have changed and it's not from our own update
+      if (newPromptsStr !== currentPromptsStr && newPromptsStr !== lastUpdateRef.current) {
+        lastUpdateRef.current = newPromptsStr;
+        setPrompts(newPrompts);
+        setHiddenPrompts([]); // Reset hidden prompts when receiving new prompts
+        // Ensure changes propagate downstream
+        updateDownstreamPrompts(newPrompts, []);
+      }
+    }
+  }, [nodeData?.params?.prompts?.value, nodeId]);
 
   useEffect(() => {
     // Update refs array when prompts change
     inputRefs.current = inputRefs.current.slice(0, prompts.length);
   }, [prompts]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <Stack spacing={1} sx={{ p: '8px 16px', position: 'relative', minWidth: 450 }}>
@@ -154,23 +189,35 @@ const PromptList = ({ nodeId, nodeData }) => {
       
       <Box sx={{ 
         display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        mb: 0.5 
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        mb: 1.5,
+        mt: 0.5
       }}>
-        {hiddenPrompts.length > 0 ? (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" color="text.secondary">
-              {hiddenPrompts.length} prompt{hiddenPrompts.length !== 1 ? 's' : ''} hidden
-            </Typography>
-            <Button size="small" onClick={showAllPrompts}>
-              Show all
-            </Button>
-          </Box>
-        ) : (
-          <div /> /* Empty div to maintain spacing */
-        )}
-        
+        <ToggleButtonGroup
+          value={heightMode}
+          exclusive
+          onChange={(e, newMode) => newMode && setHeightMode(newMode)}
+          size="small"
+          sx={{
+            '& .MuiToggleButton-root': {
+              px: 2,
+              py: 0.5,
+              textTransform: 'none',
+              fontSize: '0.875rem'
+            }
+          }}
+        >
+          <ToggleButton value="flexible" aria-label="flexible height">
+            <HeightIcon sx={{ mr: 1, transform: 'rotate(90deg)' }} fontSize="small" />
+            Flexible
+          </ToggleButton>
+          <ToggleButton value="fixed" aria-label="fixed height">
+            <HeightIcon sx={{ mr: 1 }} fontSize="small" />
+            Fixed
+          </ToggleButton>
+        </ToggleButtonGroup>
+
         <Tooltip 
           title={
             <Box sx={{ p: 1, fontSize: '0.875rem' }}>
@@ -179,7 +226,7 @@ const PromptList = ({ nodeId, nodeData }) => {
               </Typography>
               <Box component="ul" sx={{ m: 0, pl: 2 }}>
                 <li>Tab - Move between fields</li>
-                <li>W - Start editing</li>
+                <li>W or Enter - Start editing</li>
                 <li>Esc - Stop editing</li>
                 <li>C - Duplicate field</li>
                 <li>D - Delete field</li>
@@ -189,7 +236,7 @@ const PromptList = ({ nodeId, nodeData }) => {
             </Box>
           }
           arrow
-          placement="left"
+          placement="right"
         >
           <IconButton
             sx={{ 
@@ -251,9 +298,32 @@ const PromptList = ({ nodeId, nodeData }) => {
             onDoubleClick={() => setEditingIndex(index)}
             fullWidth
             multiline
-            rows={3}
+            rows={editingIndex === index ? undefined : (heightMode === 'fixed' ? 3 : undefined)}
+            maxRows={editingIndex === index ? Infinity : (heightMode === 'flexible' ? Infinity : undefined)}
+            minRows={editingIndex === index ? 1 : (heightMode === 'flexible' ? 1 : undefined)}
             InputProps={{
               readOnly: editingIndex !== index,
+              sx: {
+                transition: 'all 0.2s ease-in-out',
+                ...(heightMode === 'fixed' && editingIndex !== index && {
+                  height: '85px',
+                  '& textarea': {
+                    overflow: 'auto'
+                  }
+                }),
+                ...(heightMode === 'flexible' && editingIndex !== index && {
+                  height: 'auto',
+                  '& textarea': {
+                    overflow: 'hidden'
+                  }
+                }),
+                ...(editingIndex === index && {
+                  height: 'auto',
+                  '& textarea': {
+                    overflow: 'hidden'
+                  }
+                })
+              }
             }}
             sx={{
               transition: 'all 0.2s ease-in-out',

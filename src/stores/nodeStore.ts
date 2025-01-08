@@ -469,6 +469,38 @@ export const useNodeState = createWithEqualityFn<NodeState>((set, get) => ({
                 }
             },
             {
+                id: 'generate-prompts',
+                type: 'custom',
+                position: { x: 300, y: 300 },
+                data: {
+                    module: 'text',
+                    action: 'generate',
+                    category: 'generation',
+                    label: "POM's Generate Prompts",
+                    params: {
+                        component: {
+                            type: 'component',
+                            display: 'component',
+                            value: 'GeneratePrompts',
+                            label: "POM's Generate Prompts"
+                        },
+                        topic: {
+                            type: 'string',
+                            label: 'Topic'
+                        },
+                        examples: {
+                            type: 'array',
+                            label: 'Examples'
+                        },
+                        prompts: {
+                            type: 'array',
+                            display: 'output',
+                            label: 'Generated Prompts'
+                        }
+                    }
+                }
+            },
+            {
                 id: 'poms-simple-timeline',
                 type: 'custom',
                 position: { x: 100, y: 100 },

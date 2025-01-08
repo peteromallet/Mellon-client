@@ -20,6 +20,8 @@ interface CustomNumberInputProps {
     max?: number;
     step?: number;
     style?: React.CSSProperties;
+    showProgress?: boolean;
+    progressColor?: 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning';
 }
 
 interface DragState {
@@ -45,6 +47,8 @@ const CustomNumberInput = ({
     max,
     step,
     style,
+    showProgress = false,
+    progressColor = 'primary',
     ...props
 }: CustomNumberInputProps) => {
     const theme = useTheme();
@@ -78,16 +82,19 @@ const CustomNumberInput = ({
     }, [isEditing, localValue, value]);
 
     const getBackgroundStyle = (value: number) => {
-        if (!displaySlider) return {};
+        if (!displaySlider && !showProgress) return {};
 
         // Calculate percentage based on the actual value's proportion of the range
-        // For negative ranges, we need to normalize the value to a 0-100% scale
         const range = maxValue - minValue;
         const normalizedValue = value - minValue; // Shift the value to start from 0
         const sliderPercent = Math.max(0, Math.min(100, (normalizedValue / range) * 100));
         
-        const baseColor = refs.current.isDragging ? theme.palette.secondary.main : 'rgba(255,255,255,0.25)';
-        const hoverColor = theme.palette.secondary.main;
+        const baseColor = showProgress 
+            ? theme.palette[progressColor].main 
+            : (refs.current.isDragging ? theme.palette.secondary.main : 'rgba(255,255,255,0.25)');
+        const hoverColor = showProgress 
+            ? theme.palette[progressColor].main 
+            : theme.palette.secondary.main;
 
         const gradientStyle = `linear-gradient(to right, ${baseColor} 0%, ${baseColor} ${sliderPercent}%, rgba(255,255,255,0.1) ${sliderPercent}%)`;
 

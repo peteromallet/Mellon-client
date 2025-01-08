@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
-import { Box, Card, CardContent, Typography, Button, IconButton, Slider, TextField, Tooltip } from '@mui/material';
+import { Box, Card, CardContent, Typography, Button, IconButton, Slider, TextField, Tooltip, ToggleButtonGroup, ToggleButton } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
 import SkipPreviousIcon from '@mui/icons-material/SkipPrevious';
@@ -44,6 +44,40 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   const [activeUploadId, setActiveUploadId] = useState(null);
   const audioFileInputRef = useRef(null);
   const imageFileInputRef = useRef(null);
+  const [imageSize, setImageSize] = useState('small');
+
+  const TIMELINE_SIZES = {
+    small: {
+      height: 140,
+      width: 800,
+      imageSize: 77,
+      fontSize: 12,
+      dropZoneSize: 40,
+      labelOffset: 2
+    },
+    medium: {
+      height: 210,
+      width: 1000,
+      imageSize: 115,
+      fontSize: 14,
+      dropZoneSize: 60,
+      labelOffset: 5
+    },
+    large: {
+      height: 280,
+      width: 1200,
+      imageSize: 154,
+      fontSize: 16,
+      dropZoneSize: 80,
+      labelOffset: 16
+    }
+  };
+
+  const handleSizeChange = (event, newSize) => {
+    if (newSize !== null) {
+      setImageSize(newSize);
+    }
+  };
 
   // Add selected node check
   const selectedNodes = useNodeState(state => state.nodes.filter(n => n.selected));
@@ -904,6 +938,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
         ));
         // Set the URL directly since we know it's from our server
         setImageUrls(prev => ({ ...prev, [filename]: fileOrUrl }));
+        // Select the timestamp after adding the image
+        setSelectedTimestamp(timestampId);
       } else {
         // Handle File drop
         const fileBuffer = await fileOrUrl.arrayBuffer();
@@ -919,6 +955,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
             ? { ...t, image: savedFileName }
             : t
         ));
+        // Select the timestamp after adding the image
+        setSelectedTimestamp(timestampId);
       }
     } catch (error) {
       console.error('Timeline: Error handling image drop:', error);
@@ -926,38 +964,15 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
     }
   };
 
-  // Add effect to initialize drop zone
-  useEffect(() => {
-    const timeline = timelineRef.current;
-    if (!timeline) return;
-
-    const handleDragOver = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (isDraggingTimelineRef.current) return;
-      
-      const rect = timeline.getBoundingClientRect();
-      const container = timeline.parentElement;
-      const currentScrollLeft = container.scrollLeft;
-      const mouseX = e.clientX - rect.left + currentScrollLeft;
-      const totalWidth = rect.width;
-      const percentageAcross = (mouseX / totalWidth) * 100;
-      setMousePosition(percentageAcross);
-      setDraggedOver('timeline');
-    };
-
-    timeline.addEventListener('dragover', handleDragOver);
-    return () => timeline.removeEventListener('dragover', handleDragOver);
-  }, []);
-
   return (
     <Card sx={{ 
       width: '100%', 
-      maxWidth: '800px',
-      minWidth: '800px',
+      maxWidth: `${TIMELINE_SIZES[imageSize].width}px`,
+      minWidth: `${TIMELINE_SIZES[imageSize].width}px`,
       minHeight: '140px',
       bgcolor: '#1E1E1E',
-      color: '#FFFFFF'
+      color: '#FFFFFF',
+      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
     }}>
       <CardContent>
         <Box sx={{ 
@@ -1174,7 +1189,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       ref={timelineRef}
                       sx={{
                         position: 'relative',
-                        height: '140px',
+                        height: `${TIMELINE_SIZES[imageSize].height}px`,
                         bgcolor: 'grey.100',
                         width: zoom <= 1 ? '100%' : `${zoom * 100}%`,
                         minWidth: '100%',
@@ -1205,18 +1220,24 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           const rect = timelineRef.current.getBoundingClientRect();
                           const container = timelineRef.current.parentElement;
                           const currentScrollLeft = container.scrollLeft;
-                          const mouseX = e.clientX - rect.left + currentScrollLeft;
-                          const totalWidth = rect.width;
-                          const percentageAcross = (mouseX / totalWidth) * 100;
-                          console.log('Timeline DragEnter:', {
-                            mouseX,
-                            totalWidth,
-                            percentageAcross,
-                            isDraggingTimelineRef: isDraggingTimelineRef.current,
-                            draggedOver,
-                            zoom,
-                            scrollLeft: currentScrollLeft
-                          });
+                          const timelineWidth = timelineRef.current.offsetWidth;
+                          const containerWidth = container.offsetWidth;
+                          
+                          // Use the same calculation as the drop handler
+                          const mouseX = e.clientX - rect.left;
+                          let percentageAcross;
+                          
+                          if (zoom > 1) {
+                            const totalScrollableWidth = timelineWidth - containerWidth;
+                            const viewportX = mouseX;
+                            const scrollPercent = currentScrollLeft / totalScrollableWidth;
+                            const adjustedX = (viewportX + (currentScrollLeft * (containerWidth / timelineWidth)));
+                            percentageAcross = (adjustedX / containerWidth) * 100;
+                          } else {
+                            percentageAcross = (mouseX / rect.width) * 100;
+                          }
+                          
+                          percentageAcross = Math.max(0, Math.min(100, percentageAcross));
                           setMousePosition(percentageAcross);
                           setDraggedOver('timeline');
                         }
@@ -1228,9 +1249,17 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           const rect = timelineRef.current.getBoundingClientRect();
                           const container = timelineRef.current.parentElement;
                           const currentScrollLeft = container.scrollLeft;
-                          const mouseX = e.clientX - rect.left + currentScrollLeft;
+                          
+                          // Calculate the total width of the timeline at current zoom
                           const totalWidth = rect.width;
-                          const percentageAcross = (mouseX / totalWidth) * 100;
+                          // Get the mouse position relative to the timeline's left edge
+                          const mouseX = e.clientX - rect.left;
+                          // Calculate the actual position considering zoom and scroll
+                          const absoluteMouseX = (mouseX + currentScrollLeft);
+                          // Calculate percentage across the entire timeline
+                          let percentageAcross = (absoluteMouseX / totalWidth) * 100;
+                          
+                          percentageAcross = Math.max(0, Math.min(100, percentageAcross));
                           setMousePosition(percentageAcross);
                           setDraggedOver('timeline');
                         }
@@ -1241,43 +1270,21 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           e.stopPropagation();
                           setDraggedOver(null);
                           
-                          // Add detailed debugging of drag data
-                          console.log('Drop Event Debug:', {
-                            types: Array.from(e.dataTransfer.types),
-                            items: Array.from(e.dataTransfer.items).map(item => ({
-                              kind: item.kind,
-                              type: item.type
-                            })),
-                            files: Array.from(e.dataTransfer.files).map(file => ({
-                              name: file.name,
-                              type: file.type,
-                              size: file.size
-                            })),
-                            text: e.dataTransfer.getData('text/plain'),
-                            html: e.dataTransfer.getData('text/html'),
-                            uri: e.dataTransfer.getData('text/uri-list')
-                          });
-                          
-                          // Store current scroll position and timeline metrics
-                          const container = timelineRef.current.parentElement;
+                          const timeline = timelineRef.current;
+                          const container = timeline.parentElement;
+                          const rect = timeline.getBoundingClientRect();
+                          const duration = audioRef.current.duration || 1;
                           const currentScrollLeft = container.scrollLeft;
-                          const timelineWidth = timelineRef.current.offsetWidth;
-                          const containerWidth = container.offsetWidth;
-                          const rect = timelineRef.current.getBoundingClientRect();
                           
-                          console.log('Timeline Drop:', {
-                            files: e.dataTransfer.files,
-                            types: e.dataTransfer.types,
-                            items: Array.from(e.dataTransfer.items).map(item => ({
-                              kind: item.kind,
-                              type: item.type
-                            })),
-                            zoom,
-                            scrollLeft: currentScrollLeft,
-                            timelineWidth,
-                            containerWidth,
-                            rectLeft: rect.left
-                          });
+                          // Use the exact same calculation as dragOver
+                          const totalWidth = rect.width;
+                          const mouseX = e.clientX - rect.left;
+                          const absoluteMouseX = (mouseX + currentScrollLeft);
+                          const clickPercent = absoluteMouseX / totalWidth;
+                          
+                          // Ensure percentage is within bounds
+                          const boundedPercent = Math.max(0, Math.min(1, clickPercent));
+                          const newTime = (boundedPercent * duration).toFixed(4);
                           
                           // Try to get file from items first
                           const items = Array.from(e.dataTransfer.items);
@@ -1285,44 +1292,13 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                           if (fileItem) {
                             const file = fileItem.getAsFile();
                             if (file && file.type.startsWith('image/')) {
-                              // Calculate drop position based on zoom state
-                              let mouseX, clickPercent;
-                              if (zoom > 1) {
-                                // Use the exact same calculation as the preview indicator
-                                mouseX = e.clientX - rect.left + currentScrollLeft;
-                                const totalWidth = rect.width;
-                                clickPercent = mouseX / totalWidth;
-                              } else {
-                                // When not zoomed, use timeline-relative position
-                                mouseX = e.clientX - rect.left;
-                                clickPercent = mouseX / rect.width;
-                              }
-                              
-                              const duration = audioRef.current.duration || 1;
-                              const newTime = (clickPercent * duration).toFixed(4);
-                              
-                              console.log('Timeline Drop Calculations:', {
-                                mouseX,
-                                timelineWidth,
-                                clickPercent,
-                                duration,
-                                newTime,
-                                rect: {
-                                  width: rect.width,
-                                  left: rect.left
-                                },
-                                clientX: e.clientX,
-                                scrollLeft: currentScrollLeft,
-                                zoom
-                              });
+                              // Temporarily disable smooth scrolling
+                              container.style.scrollBehavior = 'auto';
                               
                               const newTimestamp = { 
                                 id: generateUniqueId(),
                                 time: newTime 
                               };
-                              
-                              // Temporarily disable smooth scrolling
-                              container.style.scrollBehavior = 'auto';
                               
                               setTimestamps(prev => {
                                 const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
@@ -1338,49 +1314,16 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                               });
                             }
                           } else {
-                            // Handle image URL drops with the same coordinate calculation logic
+                            // Handle image URL drops with the same positioning logic
                             const imageUrl = e.dataTransfer.getData('text/plain');
                             if (imageUrl) {
-                              console.log('Timeline Drop: Got image URL', { imageUrl });
-                              
-                              // Calculate drop position based on zoom state
-                              let mouseX, clickPercent;
-                              if (zoom > 1) {
-                                // Use the exact same calculation as the preview indicator
-                                mouseX = e.clientX - rect.left + currentScrollLeft;
-                                const totalWidth = rect.width;
-                                clickPercent = mouseX / totalWidth;
-                              } else {
-                                // When not zoomed, use timeline-relative position
-                                mouseX = e.clientX - rect.left;
-                                clickPercent = mouseX / rect.width;
-                              }
-                              
-                              const duration = audioRef.current.duration || 1;
-                              const newTime = (clickPercent * duration).toFixed(4);
-                              
-                              console.log('Timeline Drop Calculations:', {
-                                mouseX,
-                                timelineWidth,
-                                clickPercent,
-                                duration,
-                                newTime,
-                                rect: {
-                                  width: rect.width,
-                                  left: rect.left
-                                },
-                                clientX: e.clientX,
-                                scrollLeft: currentScrollLeft,
-                                zoom
-                              });
+                              // Temporarily disable smooth scrolling
+                              container.style.scrollBehavior = 'auto';
                               
                               const newTimestamp = { 
                                 id: generateUniqueId(),
                                 time: newTime 
                               };
-                              
-                              // Temporarily disable smooth scrolling
-                              container.style.scrollBehavior = 'auto';
                               
                               setTimestamps(prev => {
                                 const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
@@ -1394,8 +1337,6 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                 container.scrollLeft = currentScrollLeft;
                                 container.style.scrollBehavior = 'smooth';
                               });
-                            } else {
-                              console.log('Timeline Drop: No valid image found');
                             }
                           }
                         }
@@ -1431,16 +1372,15 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             flexDirection: 'column',
                             alignItems: 'center',
                             '& > div': {
-                              width: '40px',
-                              height: '60px',
+                              width: `${TIMELINE_SIZES[imageSize].imageSize}px`,
+                              height: `${TIMELINE_SIZES[imageSize].imageSize * 1.5}px`,
                               border: '2px solid rgba(255, 165, 0, 0.5)',
                               borderRadius: '4px',
                               backgroundColor: 'rgba(255, 165, 0, 0.1)',
-                              marginTop: '40px'
+                              marginTop: `${TIMELINE_SIZES[imageSize].imageSize * 0.3}px`
                             }
                           }}
                         >
-                          {console.log('Rendering timeline indicator:', { mousePosition, draggedOver })}
                           <div />
                         </Box>
                       )}
@@ -1622,18 +1562,10 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             }}
                             onDragLeave={() => setDraggedOver(null)}
                             onDrop={(e) => {
+                              // This is for dropping on existing timestamps - should only handle image replacement
                               e.preventDefault();
                               e.stopPropagation();
                               setDraggedOver(null);
-                              
-                              console.log('Timeline: Drop on existing timestamp', {
-                                timestampId: stamp.id,
-                                types: e.dataTransfer.types,
-                                items: Array.from(e.dataTransfer.items).map(item => ({
-                                  kind: item.kind,
-                                  type: item.type
-                                }))
-                              });
                               
                               // Try to get file from items first
                               const items = Array.from(e.dataTransfer.items);
@@ -1647,10 +1579,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                 // Try to get image URL from text data
                                 const imageUrl = e.dataTransfer.getData('text/plain');
                                 if (imageUrl) {
-                                  console.log('Timeline: Got image URL for existing timestamp', { imageUrl });
                                   handleImageDrop(imageUrl, e, stamp.id);
-                                } else {
-                                  console.log('Timeline: No valid image found for existing timestamp');
                                 }
                               }
                             }}
@@ -1658,7 +1587,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                             <Box
                               sx={{
                                 position: 'absolute',
-                                bottom: 0,
+                                bottom: TIMELINE_SIZES[imageSize].labelOffset,
                                 left: '50%',
                                 transform: 'translateX(-50%)',
                                 bgcolor: 'background.paper',
@@ -1698,14 +1627,15 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                   '&::before': {
                                     content: '""',
                                     position: 'absolute',
-                                    top: '-80px',
-                                    left: '-10px',
-                                    right: '-10px',
+                                    top: `-${TIMELINE_SIZES[imageSize].imageSize * 1.2}px`,
+                                    left: `-${TIMELINE_SIZES[imageSize].imageSize * 0.2}px`,
+                                    right: `-${TIMELINE_SIZES[imageSize].imageSize * 0.2}px`,
                                     bottom: '-4px',
                                     border: '2px solid rgba(255, 165, 0, 0.5)',
                                     borderRadius: '4px',
                                     backgroundColor: 'rgba(255, 165, 0, 0.1)',
-                                    zIndex: -1
+                                    zIndex: -1,
+                                    pointerEvents: 'none'
                                   }
                                 })
                               }}
@@ -1714,32 +1644,33 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                 <Box
                                   sx={{
                                     position: 'absolute',
-                                    top: '-80px',
-                                    left: '-10px',
-                                    right: '-10px',
+                                    top: `-${TIMELINE_SIZES[imageSize].imageSize * 1.2}px`,
+                                    left: `-${TIMELINE_SIZES[imageSize].imageSize * 0.2}px`,
+                                    right: `-${TIMELINE_SIZES[imageSize].imageSize * 0.2}px`,
                                     bottom: '-4px',
                                     border: '2px solid rgba(255, 165, 0, 0.5)',
                                     borderRadius: '4px',
                                     backgroundColor: 'rgba(255, 165, 0, 0.1)',
-                                    zIndex: -1
+                                    zIndex: -1,
+                                    pointerEvents: 'none'
                                   }}
                                 />
                               )}
                               <Box className="upload-hover-area" />
-                              {stamp.image && imageUrls[stamp.image] && (
+                              {stamp.image && imageUrls[stamp.image] ? (
                                 <Box
                                   sx={{
                                     position: 'absolute',
                                     bottom: '100%',
                                     left: '50%',
                                     transform: draggedTimestamp === stamp.id 
-                                      ? 'translateX(-50%) scale(1.5) translateY(-8px)'
+                                      ? `translateX(-50%) scale(1.5) translateY(${imageSize === 'large' ? -24 : imageSize === 'medium' ? -12 : -5}px)`
                                       : (hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging
-                                        ? 'translateX(-50%) scale(1.5) translateY(-8px)'
-                                        : 'translateX(-50%) scale(1) translateY(0)',
-                                    width: 77,
-                                    height: 77,
-                                    marginBottom: '8px',
+                                        ? `translateX(-50%) scale(1.5) translateY(${imageSize === 'large' ? -24 : imageSize === 'medium' ? -12 : -5}px)`
+                                        : `translateX(-50%) scale(1) translateY(${imageSize === 'large' ? -12 : imageSize === 'medium' ? -8 : 4}px)`,
+                                    width: TIMELINE_SIZES[imageSize].imageSize,
+                                    height: TIMELINE_SIZES[imageSize].imageSize,
+                                    marginBottom: '12px',
                                     borderRadius: 1,
                                     overflow: 'visible',
                                     border: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
@@ -1783,27 +1714,20 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                       e.stopPropagation();
                                       e.nativeEvent.stopImmediatePropagation();
                                       
-                                      // Prevent multiple clicks during deletion
                                       if (isDeletingTimestamp === stamp.id) return;
                                       setIsDeletingTimestamp(stamp.id);
 
                                       try {
-                                        if (stamp.image) {
-                                          if (imageUrls[stamp.image]) {
-                                            URL.revokeObjectURL(imageUrls[stamp.image]);
-                                            setImageUrls(prev => {
-                                              const newUrls = { ...prev };
-                                              delete newUrls[stamp.image];
-                                              return newUrls;
-                                            });
-                                          }
+                                        if (stamp.image && imageUrls[stamp.image]) {
+                                          URL.revokeObjectURL(imageUrls[stamp.image]);
+                                          setImageUrls(prev => {
+                                            const newUrls = { ...prev };
+                                            delete newUrls[stamp.image];
+                                            return newUrls;
+                                          });
                                         }
-
-                                        // Update timestamps to remove only the image reference
                                         setTimestamps(prev => prev.map(t => 
-                                          t.id === stamp.id 
-                                            ? { ...t, image: null }
-                                            : t
+                                          t.id === stamp.id ? { ...t, image: null } : t
                                         ));
                                       } catch (error) {
                                         console.error('Error removing image reference:', error);
@@ -1812,7 +1736,6 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                       }
                                     }}
                                     onMouseDown={(e) => {
-                                      console.log('Delete button mouse down');
                                       e.preventDefault();
                                       e.stopPropagation();
                                       e.nativeEvent.stopImmediatePropagation();
@@ -1849,8 +1772,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                     ×
                                   </IconButton>
                                 </Box>
-                              )}
-                              {!stamp.image && !draggedTimestamp && (
+                              ) : !draggedTimestamp && (
                                 <Box
                                   sx={{
                                     position: 'absolute',
@@ -1899,7 +1821,10 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                   </IconButton>
                                 </Box>
                               )}
-                              <Typography sx={{ fontSize: 'inherit', color: 'text.primary' }}>
+                              <Typography sx={{ 
+                                fontSize: `${TIMELINE_SIZES[imageSize].fontSize}px`, 
+                                color: 'text.primary' 
+                              }}>
                                 {parseFloat(stamp.time).toFixed(2)}s
                               </Typography>
                               <Button
@@ -1914,22 +1839,17 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                   setIsDeletingTimestamp(stamp.id);
 
                                   try {
-                                    if (stamp.image) {
-                                      try {
-                                        await dataService.deleteNodeFile(nodeId, stamp.image);
-                                        if (imageUrls[stamp.image]) {
-                                          URL.revokeObjectURL(imageUrls[stamp.image]);
-                                          setImageUrls(prev => {
-                                            const newUrls = { ...prev };
-                                            delete newUrls[stamp.image];
-                                            return newUrls;
-                                          });
-                                        }
-                                      } catch (error) {
-                                        console.error('Error deleting image file:', error);
-                                      }
+                                    if (stamp.image && imageUrls[stamp.image]) {
+                                      URL.revokeObjectURL(imageUrls[stamp.image]);
+                                      setImageUrls(prev => {
+                                        const newUrls = { ...prev };
+                                        delete newUrls[stamp.image];
+                                        return newUrls;
+                                      });
                                     }
                                     setTimestamps(prev => prev.filter(t => t.id !== stamp.id));
+                                  } catch (error) {
+                                    console.error('Error removing timestamp:', error);
                                   } finally {
                                     setIsDeletingTimestamp(null);
                                   }
@@ -2004,6 +1924,37 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       </Box>
                     </Box>
                   </Box>
+                </Box>
+
+                <Box sx={{ 
+                  position: 'absolute',
+                  bottom: -48,
+                  right: 0,
+                  zIndex: 1,
+                  backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                  borderRadius: 1,
+                  padding: '4px',
+                  backdropFilter: 'blur(4px)'
+                }}>
+                  <ToggleButtonGroup
+                    value={imageSize}
+                    exclusive
+                    onChange={handleSizeChange}
+                    size="small"
+                    sx={{
+                      '& .MuiToggleButton-root': {
+                        color: 'text.primary',
+                        '&.Mui-selected': {
+                          color: 'primary.main',
+                          backgroundColor: 'rgba(255, 255, 255, 0.08)'
+                        }
+                      }
+                    }}
+                  >
+                    <ToggleButton value="small">S</ToggleButton>
+                    <ToggleButton value="medium">M</ToggleButton>
+                    <ToggleButton value="large">L</ToggleButton>
+                  </ToggleButtonGroup>
                 </Box>
 
                 <Box sx={{ 

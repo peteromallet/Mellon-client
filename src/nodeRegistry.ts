@@ -19,6 +19,34 @@ export const customNodes = {
       }
     }
   },
+  'generate-prompts': {
+    label: "POM's Generate Prompts",
+    module: 'text',
+    action: 'generate',
+    category: 'generation',
+    type: 'generatePrompts',
+    params: {
+      component: {
+        type: 'component',
+        display: 'component',
+        value: 'GeneratePrompts',
+        label: "POM's Generate Prompts"
+      },
+      topic: {
+        type: 'string',
+        label: 'Topic'
+      },
+      examples: {
+        type: 'array',
+        label: 'Examples'
+      },
+      prompts: {
+        type: 'array',
+        display: 'output',
+        label: 'Generated Prompts'
+      }
+    }
+  },
   'image-generator': {
     label: 'POM\'s Simple Image Generator',
     module: 'image',

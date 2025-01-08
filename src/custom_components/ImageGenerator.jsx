@@ -22,18 +22,20 @@ const ImageGenerator = ({ nodeId, nodeData }) => {
   // Get prompts from incoming PromptList node if connected
   useEffect(() => {
     if (hasPromptInput) {
-      const promptListNode = incomingNodes.find(node => node.type === 'promptList');
+      const promptListNode = incomingNodes.find(node => node.data?.params?.component?.value === 'PromptList');
       if (promptListNode) {
-        const prompts = promptListNode.data?.params?.prompts?.value || [''];
-        // Format prompts as a JSON-like string
-        const formattedPrompts = JSON.stringify(prompts, null, 2);
-        setPrompt(formattedPrompts);
-        setParamValue(nodeId, 'prompt', formattedPrompts);
+        const prompts = promptListNode.data?.params?.prompts?.value;
+        // Only update if the prompt is different from current state
+        if (prompt !== '') {
+          setPrompt(''); // Clear the text input when we have incoming prompts
+          setParamValue(nodeId, 'prompt', '');
+        }
       }
     }
-  }, [incomingNodes, hasPromptInput]);
+  }, [incomingNodes, hasPromptInput, nodeId]); // Add nodeId to dependencies
 
   const handlePromptChange = (e) => {
+    if (hasPromptInput) return; // Don't allow manual input if we have a connection
     const newPrompt = e.target.value;
     setPrompt(newPrompt);
     setParamValue(nodeId, 'prompt', newPrompt);
@@ -51,28 +53,55 @@ const ImageGenerator = ({ nodeId, nodeData }) => {
   };
 
   const handleGenerate = async () => {
-    if (!prompt.trim()) return;
+    if ((!prompt.trim() && !hasPromptInput) || (hasPromptInput && !incomingNodes.length)) return;
     
     setIsGenerating(true);
     try {
-      const numImages = parseInt(nodeData?.params?.number?.value || 1, 10);
-      console.log('Generating images with:', { numImages, prompt });
+      const imagesPerPrompt = parseInt(nodeData?.params?.number?.value || 1, 10);
       
-      // Parse prompts if they come from PromptList
+      // Get prompts either from input connection or text field
       let promptLines;
-      try {
-        promptLines = JSON.parse(prompt);
-      } catch {
-        // If not valid JSON, fall back to splitting by newlines
-        promptLines = prompt.split('\n').filter(p => p.trim());
+      if (hasPromptInput) {
+        const promptListNode = incomingNodes.find(node => node.data?.params?.component?.value === 'PromptList');
+        if (!promptListNode) {
+          throw new Error('Connected prompt list not found');
+        }
+        
+        // Access the prompts directly from the node's data
+        promptLines = promptListNode.data?.params?.prompts?.value;
+        if (!Array.isArray(promptLines)) {
+          console.warn('Unexpected prompts format:', promptLines);
+          promptLines = [];
+        }
+      } else {
+        try {
+          promptLines = JSON.parse(prompt);
+        } catch {
+          promptLines = prompt.split('\n').filter(p => p.trim());
+        }
       }
       
-      const prompts = {};
-      for (let i = 1; i <= numImages; i++) {
-        // Cycle through prompts if there are multiple
-        const promptIndex = (i - 1) % promptLines.length;
-        prompts[i] = promptLines[promptIndex];
+      console.log('Raw prompts from input:', promptLines);
+      
+      // Filter out any empty prompts
+      promptLines = promptLines.filter(p => p && p.trim());
+      
+      if (promptLines.length === 0) {
+        throw new Error('No valid prompts to generate images from');
       }
+
+      // Create prompts object with the specified number of images per prompt
+      const prompts = {};
+      let promptIndex = 1;
+      
+      // For each prompt, generate the specified number of images
+      for (const promptText of promptLines) {
+        for (let i = 0; i < imagesPerPrompt; i++) {
+          prompts[promptIndex] = promptText;
+          promptIndex++;
+        }
+      }
+      
       console.log('Sending prompts:', prompts);
 
       // Use fetch to get the response stream
@@ -120,7 +149,7 @@ const ImageGenerator = ({ nodeId, nodeData }) => {
                 params: {
                   component: 'ImageGenerator',
                   prompt: prompt,
-                  number: numImages,
+                  number: imagesPerPrompt,
                   output: [result.filename], // Send just the new filename
                 },
                 files: [result.filename],
@@ -190,7 +219,7 @@ const ImageGenerator = ({ nodeId, nodeData }) => {
         onChange={handleNumberChange}
         min={1}
         max={12}
-        label="Number of images"
+        label={hasPromptInput ? "Images per prompt" : "Number of images"}
         disabled={isGenerating}
         dataType="int"
         slider={true}
@@ -202,7 +231,7 @@ const ImageGenerator = ({ nodeId, nodeData }) => {
             variant="contained" 
             onClick={handleGenerate} 
             fullWidth
-            disabled={isGenerating || !prompt.trim() || !hasOutputConnection}
+            disabled={isGenerating || (!hasPromptInput && !prompt.trim()) || !hasOutputConnection}
           >
             {isGenerating ? (
               <>
