@@ -190,9 +190,11 @@ const ImageGallery = ({ nodeId, nodeData }) => {
   };
 
   const handleDragStart = (e, index) => {
-    console.log('ImageGallery: Drag started', { index });
+    console.log('ImageGallery: Drag started', { index, page });
     
-    const filename = displayedImages[index];
+    // Calculate the actual index in displayedImages based on current page
+    const actualIndex = (page - 1) * itemsPerPage + index;
+    const filename = displayedImages[actualIndex];
     const baseFilename = filename.includes('/') ? filename.split('/').pop() : filename;
     const url = imageUrls[baseFilename];
     

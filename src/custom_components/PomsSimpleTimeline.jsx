@@ -45,6 +45,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
   const audioFileInputRef = useRef(null);
   const imageFileInputRef = useRef(null);
   const [imageSize, setImageSize] = useState('small');
+  const containerRef = useRef(null);
 
   const TIMELINE_SIZES = {
     small: {
@@ -964,6 +965,133 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
     }
   };
 
+  const handleDropOnTimelineOrStamp = async (e, {
+    nodeId,
+    timelineRef,
+    containerRef,
+    audioRef,
+    isNodeSelected,
+    zoom,
+    setTimestamps,
+    setSelectedTimestamp,
+    generateUniqueId,
+    handleImageDrop,
+    timestamps,
+    targetStampId
+  }) => {
+    if (!isNodeSelected || !timelineRef?.current || !audioRef?.current) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Read the file items or a text/plain URL
+    const items = Array.from(e.dataTransfer.items || []);
+    let file = null;
+    let droppedUrl = null;
+    const fileItem = items.find(item => item?.kind === 'file');
+
+    if (fileItem) {
+      file = fileItem.getAsFile();
+    } else {
+      // Possibly a dragged URL
+      const plainUrl = e.dataTransfer.getData('text/plain');
+      if (plainUrl && typeof plainUrl === 'string') {
+        droppedUrl = plainUrl;
+      }
+    }
+
+    let newStampId = targetStampId || null;
+    let newTimeFloat = 0;
+
+    const duration = audioRef.current.duration || 1;
+
+    // If dropping on timeline, figure out the time
+    if (!targetStampId) {
+      const rect = timelineRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const percentageAcross = mouseX / rect.width * 100;
+      
+      // Ensure bounds
+      const boundedPercent = Math.max(0, Math.min(100, percentageAcross)) / 100;
+      newTimeFloat = parseFloat((boundedPercent * duration).toFixed(4));
+
+      // Create a new timestamp if it's not an existing one
+      const freshStampId = generateUniqueId();
+      newStampId = freshStampId;
+
+      const newStamp = {
+        id: freshStampId,
+        time: newTimeFloat.toString(),
+        image: null,
+      };
+      // Insert into timestamps array
+      setTimestamps(prev => [...prev, newStamp].sort((a,b) => parseFloat(a.time) - parseFloat(b.time)));
+
+      // Set it selected
+      setSelectedTimestamp(freshStampId);
+    }
+
+    // If we have a stamp ID (either new or existing), handle the file/URL
+    if (newStampId) {
+      // Temporarily disable smooth scrolling during the operation
+      const container = containerRef?.current || timelineRef.current.parentElement;
+      container.style.scrollBehavior = 'auto';
+      const currentScrollLeft = container.scrollLeft;
+
+      try {
+        // If we have a file, handle the image drop
+        if (file && typeof file.type === 'string' && file.type.startsWith('image/')) {
+          await handleImageDrop(file, e, newStampId);
+          return;
+        }
+        // If we have a dropped URL
+        if (typeof droppedUrl === 'string') {
+          await handleImageDrop(droppedUrl, e, newStampId);
+        }
+      } finally {
+        // Restore scroll position and smooth scrolling
+        requestAnimationFrame(() => {
+          container.scrollLeft = currentScrollLeft;
+          container.style.scrollBehavior = 'smooth';
+        });
+      }
+    }
+  };
+
+  const handleTimelineDrop = async (e) => {
+    await handleDropOnTimelineOrStamp(e, {
+      nodeId,
+      timelineRef,
+      containerRef,
+      audioRef,
+      isNodeSelected,
+      zoom,
+      setTimestamps,
+      setSelectedTimestamp,
+      generateUniqueId,
+      handleImageDrop,
+      timestamps,
+    });
+  };
+
+  const handleTimestampDrop = async (e, stampId) => {
+    e.targetStampId = stampId;
+    await handleDropOnTimelineOrStamp(e, {
+      nodeId,
+      timelineRef,
+      containerRef,
+      audioRef,
+      isNodeSelected,
+      zoom,
+      setTimestamps,
+      setSelectedTimestamp,
+      generateUniqueId,
+      handleImageDrop,
+      timestamps,
+      targetStampId: stampId,
+    });
+  };
+
   return (
     <Card sx={{ 
       width: '100%', 
@@ -1167,6 +1295,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
 
                 <Box sx={{ position: 'relative' }}>
                   <Box 
+                    ref={containerRef}
                     sx={{
                       overflowX: zoom > 1 ? 'auto' : 'hidden',
                       borderRadius: 1,
@@ -1244,114 +1373,39 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                       }}
                       onDragOver={(e) => {
                         if (!isDraggingTimelineRef.current && timelineRef.current) {
+                          // Only proceed if we're actually dragging a file or URL
+                          const items = Array.from(e.dataTransfer.items || []);
+                          const hasFile = items.some(item => item?.kind === 'file');
+                          const hasUrl = e.dataTransfer.types.includes('text/plain');
+                          
+                          if (!hasFile && !hasUrl) return;
+                          
                           e.preventDefault();
                           e.stopPropagation();
                           const rect = timelineRef.current.getBoundingClientRect();
-                          const container = timelineRef.current.parentElement;
-                          const currentScrollLeft = container.scrollLeft;
-                          
-                          // Calculate the total width of the timeline at current zoom
-                          const totalWidth = rect.width;
-                          // Get the mouse position relative to the timeline's left edge
                           const mouseX = e.clientX - rect.left;
-                          // Calculate the actual position considering zoom and scroll
-                          const absoluteMouseX = (mouseX + currentScrollLeft);
-                          // Calculate percentage across the entire timeline
-                          let percentageAcross = (absoluteMouseX / totalWidth) * 100;
+                          const percentageAcross = mouseX / rect.width * 100;
                           
-                          percentageAcross = Math.max(0, Math.min(100, percentageAcross));
-                          setMousePosition(percentageAcross);
+                          // Ensure bounds
+                          const boundedPercentage = Math.max(0, Math.min(100, percentageAcross));
+                          setMousePosition(boundedPercentage);
                           setDraggedOver('timeline');
                         }
                       }}
-                      onDrop={(e) => {
-                        if (!isDraggingTimelineRef.current && timelineRef.current && audioRef.current) {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDraggedOver(null);
-                          
-                          const timeline = timelineRef.current;
-                          const container = timeline.parentElement;
-                          const rect = timeline.getBoundingClientRect();
-                          const duration = audioRef.current.duration || 1;
-                          const currentScrollLeft = container.scrollLeft;
-                          
-                          // Use the exact same calculation as dragOver
-                          const totalWidth = rect.width;
-                          const mouseX = e.clientX - rect.left;
-                          const absoluteMouseX = (mouseX + currentScrollLeft);
-                          const clickPercent = absoluteMouseX / totalWidth;
-                          
-                          // Ensure percentage is within bounds
-                          const boundedPercent = Math.max(0, Math.min(1, clickPercent));
-                          const newTime = (boundedPercent * duration).toFixed(4);
-                          
-                          // Try to get file from items first
-                          const items = Array.from(e.dataTransfer.items);
-                          const fileItem = items.find(item => item.kind === 'file');
-                          if (fileItem) {
-                            const file = fileItem.getAsFile();
-                            if (file && file.type.startsWith('image/')) {
-                              // Temporarily disable smooth scrolling
-                              container.style.scrollBehavior = 'auto';
-                              
-                              const newTimestamp = { 
-                                id: generateUniqueId(),
-                                time: newTime 
-                              };
-                              
-                              setTimestamps(prev => {
-                                const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
-                                handleImageDrop(file, e, newTimestamp.id);
-                                setSelectedTimestamp(newTimestamp.id);
-                                return newTimestamps;
-                              });
-                              
-                              // Restore scroll position and smooth scrolling
-                              requestAnimationFrame(() => {
-                                container.scrollLeft = currentScrollLeft;
-                                container.style.scrollBehavior = 'smooth';
-                              });
-                            }
-                          } else {
-                            // Handle image URL drops with the same positioning logic
-                            const imageUrl = e.dataTransfer.getData('text/plain');
-                            if (imageUrl) {
-                              // Temporarily disable smooth scrolling
-                              container.style.scrollBehavior = 'auto';
-                              
-                              const newTimestamp = { 
-                                id: generateUniqueId(),
-                                time: newTime 
-                              };
-                              
-                              setTimestamps(prev => {
-                                const newTimestamps = [...prev, newTimestamp].sort((a, b) => parseFloat(a.time) - parseFloat(b.time));
-                                handleImageDrop(imageUrl, e, newTimestamp.id);
-                                setSelectedTimestamp(newTimestamp.id);
-                                return newTimestamps;
-                              });
-                              
-                              // Restore scroll position and smooth scrolling
-                              requestAnimationFrame(() => {
-                                container.scrollLeft = currentScrollLeft;
-                                container.style.scrollBehavior = 'smooth';
-                              });
-                            }
-                          }
-                        }
-                      }}
+                      onDrop={handleTimelineDrop}
                       onMouseMove={(e) => {
                         if (!isDraggingTimelineRef.current && timelineRef.current) {
                           const rect = timelineRef.current.getBoundingClientRect();
                           const mouseX = e.clientX - rect.left;
                           const percentageAcross = mouseX / rect.width * 100;
                           
-                          setMousePosition(percentageAcross);
+                          // Ensure bounds
+                          const boundedPercentage = Math.max(0, Math.min(100, percentageAcross));
+                          setMousePosition(boundedPercentage);
                           
                           const hoverButton = document.querySelector('.hover-button');
                           if (hoverButton) {
-                            hoverButton.style.left = `${percentageAcross}%`;
+                            hoverButton.style.left = `${boundedPercentage}%`;
                           }
                         }
                       }}
@@ -1561,28 +1615,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                               setDraggedOver(stamp.id);
                             }}
                             onDragLeave={() => setDraggedOver(null)}
-                            onDrop={(e) => {
-                              // This is for dropping on existing timestamps - should only handle image replacement
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setDraggedOver(null);
-                              
-                              // Try to get file from items first
-                              const items = Array.from(e.dataTransfer.items);
-                              const fileItem = items.find(item => item.kind === 'file');
-                              if (fileItem) {
-                                const file = fileItem.getAsFile();
-                                if (file && file.type.startsWith('image/')) {
-                                  handleImageDrop(file, e, stamp.id);
-                                }
-                              } else {
-                                // Try to get image URL from text data
-                                const imageUrl = e.dataTransfer.getData('text/plain');
-                                if (imageUrl) {
-                                  handleImageDrop(imageUrl, e, stamp.id);
-                                }
-                              }
-                            }}
+                            onDrop={(e) => handleTimestampDrop(e, stamp.id)}
                           >
                             <Box
                               sx={{
@@ -1676,7 +1709,7 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
                                     border: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
                                       ? '1px solid rgba(255, 255, 255, 0.4)'
                                       : '1px solid rgba(255, 255, 255, 0.2)',
-                                    boxShadow: draggedTimestamp === stamp.id || ((hoveredTimestamp === stamp.id || selectedTimestamp === stamp.id) && !isDragging)
+                                    boxShadow: draggedTimestamp === stamp.id 
                                       ? '0 8px 16px rgba(0,0,0,0.3)'
                                       : '0 2px 4px rgba(0,0,0,0.1)',
                                     transition: draggedTimestamp === stamp.id 
@@ -1928,8 +1961,8 @@ const PomsSimpleTimeline = ({ nodeId, nodeData }) => {
 
                 <Box sx={{ 
                   position: 'absolute',
-                  bottom: -48,
-                  right: 0,
+                  bottom: 8,
+                  right: 8,
                   zIndex: 1,
                   backgroundColor: 'rgba(0, 0, 0, 0.6)',
                   borderRadius: 1,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Stack, TextField, Button, Box, ToggleButtonGroup, ToggleButton, Typography } from '@mui/material';
+import { Stack, TextField, Button, Box, ToggleButtonGroup, ToggleButton, Typography, Tooltip } from '@mui/material';
 import { Handle, Position } from '@xyflow/react';
 import { useNodeState } from '../stores/nodeStore';
 import CustomNumberInput from '../components/CustomNumberInput';
@@ -155,25 +155,6 @@ const GeneratePrompts = ({ nodeId, nodeData }) => {
         id="prompts"
       />
 
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-        <ToggleButtonGroup
-          value={mode}
-          exclusive
-          onChange={handleModeChange}
-          size="small"
-        >
-          <ToggleButton value="add">Add</ToggleButton>
-          <ToggleButton value="edit">Edit</ToggleButton>
-          <ToggleButton value="new">New</ToggleButton>
-        </ToggleButtonGroup>
-      </Box>
-
-      {mode === 'new' && (
-        <Typography color="warning.main" variant="caption" sx={{ mb: 1 }}>
-          Warning: This will overwrite the existing prompts
-        </Typography>
-      )}
-
       <TextField
         size="small"
         placeholder="Enter topic"
@@ -184,6 +165,33 @@ const GeneratePrompts = ({ nodeId, nodeData }) => {
         multiline
         rows={3}
       />
+
+      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
+        <ToggleButtonGroup
+          value={mode}
+          exclusive
+          onChange={handleModeChange}
+          size="medium"
+          color="primary"
+          sx={{ width: '100%' }}
+        >
+          <Tooltip title="This will add new prompts to the end of the examples" arrow>
+            <ToggleButton value="add" sx={{ flex: 1 }}>Add</ToggleButton>
+          </Tooltip>
+          <Tooltip title="This will modify your existing examples to be more creative" arrow>
+            <ToggleButton value="edit" sx={{ flex: 1 }}>Edit</ToggleButton>
+          </Tooltip>
+          <Tooltip title="This will generate completely new prompts, replacing the existing ones" arrow>
+            <ToggleButton value="new" sx={{ flex: 1 }}>New</ToggleButton>
+          </Tooltip>
+        </ToggleButtonGroup>
+      </Box>
+
+      {mode === 'new' && (
+        <Typography color="warning.main" variant="caption" sx={{ mb: 1 }}>
+          Warning: This will overwrite the existing prompts
+        </Typography>
+      )}
 
       {(mode === 'add' || mode === 'new') && (
         <CustomNumberInput

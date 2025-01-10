@@ -7,7 +7,7 @@ import fcntl
 import psutil
 import datetime
 import anthropic
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +16,21 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import asyncio
 from werkzeug.utils import secure_filename
+
+# New imports for FLUX interpolation
+import torch
+import gc
+import cv2
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+from torch.cuda import max_memory_allocated, reset_peak_memory_stats, synchronize
+from diffusers import FlowMatchEulerDiscreteScheduler, AutoencoderKL, FluxPriorReduxPipeline, FluxImg2ImgPipeline
+from diffusers.models.transformers.transformer_flux import FluxTransformer2DModel
+from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
+from diffusers.utils import load_image
+from transformers import CLIPTextModel, CLIPTokenizer, T5EncoderModel, T5TokenizerFast
+from functools import wraps
+import glob
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +67,28 @@ class PromptGenerateRequest(BaseModel):
     examples: List[str]
     mode: str
     numToGenerate: Optional[int] = 5
+
+# Add new models for FLUX interpolation
+class InterpolationRequest(BaseModel):
+    image_paths: Optional[List[str]] = None
+    image_dir: Optional[str] = None
+    output_path: str = 'interpolation.mp4'
+    sort_method: str = 'alpha'
+    frames: str = "16"
+    noise_blend: float = 0.1
+    timestamps: Optional[List[float]] = None
+    fps: float = 30.0
+    denoised_image: Optional[float] = None
+
+# Add model for FLUX Lora generation
+class FluxLoraRequest(BaseModel):
+    prompt: str
+    width: int = 1024
+    height: int = 1024
+    num_inference_steps: int = 4
+    guidance_scale: float = 1.5
+    seed: Optional[int] = None
+    timestep_to_start_cfg: int = 2
 
 # Node data helper functions
 def atomic_write_json(data_path, data):
@@ -361,6 +398,329 @@ async def delete_file(filename: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# FLUX Interpolation Helper Functions
+def timing_decorator(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        duration = time.time() - start
+        print(f"{func.__name__}: {duration:.2f}s")
+        return result
+    return wrapper
+
+def add_timing_to_pipeline(pipe):
+    if hasattr(pipe, 'encode_image'):
+        pipe.encode_image = timing_decorator(pipe.encode_image)
+    if hasattr(pipe, 'encode_prompt'):
+        pipe.encode_prompt = timing_decorator(pipe.encode_prompt)
+    if hasattr(pipe, 'vae_encode'):
+        pipe.vae_encode = timing_decorator(pipe.vae_encode)
+    return pipe
+
+def setup_pipeline():
+    dtype = torch.bfloat16
+    bfl_repo = "black-forest-labs/FLUX.1-schnell"
+    revision = "refs/pr/1"
+    scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(bfl_repo, subfolder="scheduler", revision=revision)
+    text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype)
+    tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-large-patch14", torch_dtype=dtype)
+    text_encoder_2 = T5EncoderModel.from_pretrained(bfl_repo, subfolder="text_encoder_2", torch_dtype=dtype, revision=revision)
+    tokenizer_2 = T5TokenizerFast.from_pretrained(bfl_repo, subfolder="tokenizer_2", torch_dtype=dtype, revision=revision)
+    vae = AutoencoderKL.from_pretrained(bfl_repo, subfolder="vae", torch_dtype=dtype, revision=revision)
+    transformer = FluxTransformer2DModel.from_pretrained(bfl_repo, subfolder="transformer", torch_dtype=dtype, revision=revision)
+
+    pipe = FluxPipeline(
+        scheduler=scheduler,
+        text_encoder=text_encoder,
+        tokenizer=tokenizer,
+        text_encoder_2=None,
+        tokenizer_2=tokenizer_2,
+        vae=vae,
+        transformer=None,
+    )
+    pipe.text_encoder_2 = text_encoder_2
+    pipe.transformer = transformer
+    pipe.enable_model_cpu_offload()
+
+    # Create img2img pipeline
+    pipe_img2img = FluxImg2ImgPipeline(
+        scheduler=scheduler,
+        text_encoder=text_encoder,
+        tokenizer=tokenizer,
+        text_encoder_2=text_encoder_2,
+        tokenizer_2=tokenizer_2,
+        vae=vae,
+        transformer=transformer,
+    )
+    pipe_img2img.enable_model_cpu_offload()
+
+    return pipe, pipe_img2img, dtype
+
+def parse_frames_list(frames_str: str) -> List[int]:
+    """Parse frames string into list of frame counts."""
+    try:
+        parts = frames_str.split(',')
+        if len(parts) == 1:
+            return [int(parts[0])]
+        else:
+            return [int(x) for x in parts]
+    except ValueError:
+        raise ValueError("Frames must be integers, either single number or comma-separated list")
+
+def process_image_batch(
+    image_paths: List[str],
+    pipe: FluxPipeline,
+    pipe_prior_redux: FluxPriorReduxPipeline,
+    frames_per_transition: List[int],
+    height: int = 1024,
+    width: int = 1024,
+    noise_blend_amount: float = 0.1,
+    num_inference_steps: int = 4,
+    guidance_scale: float = 1.5,
+    seed: int = 12345,
+    denoised_image: Optional[float] = None,
+    pipe_img2img: Optional[FluxImg2ImgPipeline] = None
+) -> Tuple[List[Image.Image], List[float]]:
+    """Process a batch of images to create interpolated frames between them."""
+    if denoised_image is not None:
+        if pipe_img2img is None:
+            raise ValueError("pipe_img2img must be provided when denoised_image is set")
+        if not 0 <= denoised_image <= 1:
+            raise ValueError("denoised_image must be between 0 and 1")
+
+    print(f"\nEncoding {len(image_paths)} images...")
+    encoded_images = {}
+    for img_path in image_paths:
+        img_name = os.path.basename(img_path)
+        img = load_image(img_path)
+        base_output = pipe_prior_redux(
+            img,
+            prompt_embeds_scale=1.0,
+            pooled_prompt_embeds_scale=1.0
+        )
+        encoded_images[img_name] = {
+            'prompt_embeds': base_output['prompt_embeds'],
+            'pooled_prompt_embeds': base_output['pooled_prompt_embeds']
+        }
+
+    results = []
+    generation_times = []
+    generator = torch.Generator().manual_seed(seed)
+    
+    for i in range(len(image_paths) - 1):
+        img1_name = os.path.basename(image_paths[i])
+        img2_name = os.path.basename(image_paths[i + 1])
+        num_frames = frames_per_transition[i]
+        
+        print(f"\nGenerating {num_frames} frames between {img1_name} and {img2_name}")
+        
+        strengths_1 = torch.linspace(1.0, 0.0, num_frames)
+        strengths_2 = torch.linspace(0.0, 1.0, num_frames)
+        
+        previous_latents = None
+        
+        for j, (strength1, strength2) in enumerate(zip(strengths_1, strengths_2)):
+            combined_output = {
+                'prompt_embeds': (
+                    encoded_images[img1_name]['prompt_embeds'] * strength1 +
+                    encoded_images[img2_name]['prompt_embeds'] * strength2
+                ),
+                'pooled_prompt_embeds': (
+                    encoded_images[img1_name]['pooled_prompt_embeds'] * strength1 +
+                    encoded_images[img2_name]['pooled_prompt_embeds'] * strength2
+                )
+            }
+            
+            if previous_latents is None:
+                latents, _ = pipe.prepare_latents(
+                    batch_size=1,
+                    num_channels_latents=pipe.transformer.config.in_channels // 4,
+                    height=height,
+                    width=width,
+                    dtype=pipe.dtype,
+                    device=pipe.device,
+                    generator=generator,
+                )
+                batch_size, seq_len, hidden_dim = latents.shape
+                latents = latents.view(batch_size, seq_len, -1)
+            else:
+                if noise_blend_amount is not None:
+                    new_latents, _ = pipe.prepare_latents(
+                        batch_size=1,
+                        num_channels_latents=pipe.transformer.config.in_channels // 4,
+                        height=height,
+                        width=width,
+                        dtype=pipe.dtype,
+                        device=pipe.device,
+                        generator=generator
+                    )
+                    new_latents = new_latents.view(batch_size, seq_len, -1)
+                    latents = (1 - noise_blend_amount) * previous_latents + noise_blend_amount * new_latents
+                else:
+                    latents = previous_latents
+            
+            previous_latents = latents
+            
+            t_start = time.time()
+            if denoised_image is not None and len(results) > 0:
+                image = pipe_img2img(
+                    image=results[-1],
+                    width=width,
+                    height=height,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    strength=denoised_image,
+                    latents=latents,
+                    **combined_output,
+                ).images[0]
+            else:
+                image = pipe(
+                    width=width,
+                    height=height,
+                    num_inference_steps=num_inference_steps,
+                    guidance_scale=guidance_scale,
+                    latents=latents,
+                    **combined_output,
+                ).images[0]
+            gen_time = time.time() - t_start
+            
+            results.append(image)
+            generation_times.append(gen_time)
+            
+            synchronize()
+            gc.collect()
+            torch.cuda.empty_cache()
+            
+            print(f"  Frame {j+1}/{num_frames}", end="\r")
+        print()
+    
+    return results, generation_times
+
+def create_interpolation_video(results, output_path='interpolation.mp4', fps=12, size=512):
+    """Create a video from a sequence of images and optionally save frames."""
+    output_dir = os.path.splitext(output_path)[0] + "_frames"
+    if os.path.exists(output_dir):
+        import shutil
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
+    
+    print(f"\nSaving frames to {output_dir}/")
+    for i, img in enumerate(results):
+        img = img.resize((size, size), Image.Resampling.LANCZOS)
+        frame_path = os.path.join(output_dir, f"frame_{i:04d}.png")
+        img.save(frame_path)
+        print(f"  Frame {i+1}/{len(results)}", end="\r")
+    print()
+    
+    try:
+        import subprocess
+        
+        current_dir = os.getcwd()
+        os.chdir(output_dir)
+        
+        output_path_abs = os.path.abspath(os.path.join(current_dir, output_path))
+        
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-framerate", str(fps),
+            "-i", "frame_%04d.png",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            output_path_abs
+        ]
+        
+        print(f"\nCreating video {output_path}")
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        
+        os.chdir(current_dir)
+        
+        if result.returncode == 0:
+            print(f"Video saved successfully to {output_path}")
+        else:
+            print("\nError creating video:")
+            print("STDOUT:", result.stdout)
+            print("STDERR:", result.stderr)
+            raise subprocess.CalledProcessError(result.returncode, ffmpeg_cmd, result.stdout, result.stderr)
+    except subprocess.CalledProcessError as e:
+        print("\nFFmpeg error:")
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        raise
+    except FileNotFoundError:
+        print("\nError: ffmpeg not found. Please install ffmpeg to create videos.")
+        print(f"The individual frames have been saved to {output_dir} and can be used to create a video manually.")
+
+def get_sorted_images(image_dir: str, sort_method: str = 'alpha') -> List[str]:
+    """Get sorted list of image paths from directory."""
+    image_paths = glob.glob(os.path.join(image_dir, "*.jpg")) + \
+                 glob.glob(os.path.join(image_dir, "*.png"))
+    
+    if not image_paths:
+        raise ValueError(f"No jpg/png images found in {image_dir}")
+    
+    if sort_method == 'alpha':
+        return sorted(image_paths)
+    elif sort_method == 'numeric':
+        import re
+        def natural_keys(text):
+            return [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', text)]
+        return sorted(image_paths, key=natural_keys)
+    elif sort_method == 'time':
+        return sorted(image_paths, key=lambda x: os.path.getctime(x))
+    else:
+        raise ValueError(f"Unknown sort method: {sort_method}")
+
+def process_timestamped_images(
+    image_paths: List[str],
+    timestamps: List[float],
+    fps: float,
+    pipe: FluxPipeline,
+    pipe_prior_redux: FluxPriorReduxPipeline,
+    height: int = 720,
+    width: int = 720,
+    noise_blend_amount: float = 0.1,
+    num_inference_steps: int = 4,
+    guidance_scale: float = 1.5,
+    seed: int = 12345,
+    denoised_image: Optional[float] = None,
+    pipe_img2img: Optional[FluxImg2ImgPipeline] = None
+) -> Tuple[List[Image.Image], List[float]]:
+    """Process images with specific timestamps to create frame sequences."""
+    if len(image_paths) != len(timestamps):
+        raise ValueError("Number of images must match number of timestamps")
+    if len(image_paths) < 2:
+        raise ValueError("Need at least 2 images to create sequence")
+    if not all(timestamps[i] < timestamps[i+1] for i in range(len(timestamps)-1)):
+        raise ValueError("Timestamps must be in ascending order")
+    
+    frames_per_transition = []
+    print("\nCalculating frame counts:")
+    for i in range(len(timestamps) - 1):
+        time_diff = timestamps[i+1] - timestamps[i]
+        num_frames = int(round(time_diff * fps)) + 1
+        frames_per_transition.append(max(1, num_frames))
+        print(f"  Transition {i}: {time_diff}s * {fps}fps = {num_frames} frames")
+    
+    print(f"\nTotal frames to generate: {sum(frames_per_transition)}")
+    
+    return process_image_batch(
+        image_paths=image_paths,
+        pipe=pipe,
+        pipe_prior_redux=pipe_prior_redux,
+        frames_per_transition=frames_per_transition,
+        height=height,
+        width=width,
+        noise_blend_amount=noise_blend_amount,
+        num_inference_steps=num_inference_steps,
+        guidance_scale=guidance_scale,
+        seed=seed,
+        denoised_image=denoised_image,
+        pipe_img2img=pipe_img2img
+    )
+
 # Keep existing image generation functions and routes
 def ensure_directory_exists(directory: str) -> None:
     """Create directory if it doesn't exist."""
@@ -517,6 +877,152 @@ async def generate_batch_stream_endpoint(request: BatchGenerateRequest):
         stream_batch_generation(request.prompts, request.fal_key),
         headers=headers
     )
+
+# FLUX Interpolation Endpoint
+@app.post("/interpolate")
+async def interpolate_endpoint(request: InterpolationRequest):
+    """Create an interpolation video from a sequence of images."""
+    try:
+        # Setup pipelines
+        pipe, pipe_img2img, dtype = setup_pipeline()
+        repo_redux = "black-forest-labs/FLUX.1-Redux-dev"
+        pipe_prior_redux = FluxPriorReduxPipeline.from_pretrained(repo_redux, torch_dtype=dtype)
+        
+        # Add timing decorators
+        pipe = add_timing_to_pipeline(pipe)
+        pipe_prior_redux = add_timing_to_pipeline(pipe_prior_redux)
+        
+        # Get image paths
+        if request.image_paths is None and request.image_dir is not None:
+            image_paths = get_sorted_images(request.image_dir, request.sort_method)
+        elif request.image_paths is not None:
+            image_paths = request.image_paths
+        else:
+            raise HTTPException(status_code=400, detail="Must specify either image_paths or image_dir")
+        
+        # Verify images exist
+        for path in image_paths:
+            if not os.path.exists(path):
+                raise HTTPException(status_code=404, detail=f"Image not found: {path}")
+        
+        if len(image_paths) < 2:
+            raise HTTPException(status_code=400, detail="Need at least 2 images to create interpolation")
+        
+        print("\nProcessing images in order:")
+        for path in image_paths:
+            print(f"  {os.path.basename(path)}")
+        
+        if request.timestamps is not None:
+            # Timestamp-based processing
+            results, generation_times = process_timestamped_images(
+                image_paths=image_paths,
+                timestamps=request.timestamps,
+                fps=request.fps,
+                pipe=pipe,
+                pipe_prior_redux=pipe_prior_redux,
+                noise_blend_amount=request.noise_blend,
+                denoised_image=request.denoised_image,
+                pipe_img2img=pipe_img2img
+            )
+        else:
+            # Standard frame-based processing
+            frames_list = parse_frames_list(request.frames)
+            results, generation_times = process_image_batch(
+                image_paths=image_paths,
+                pipe=pipe,
+                pipe_prior_redux=pipe_prior_redux,
+                frames_per_transition=frames_list,
+                noise_blend_amount=request.noise_blend,
+                denoised_image=request.denoised_image,
+                pipe_img2img=pipe_img2img
+            )
+        
+        # Create video
+        create_interpolation_video(results, request.output_path, fps=request.fps)
+        
+        # Return statistics
+        return {
+            "status": "success",
+            "num_images": len(image_paths),
+            "num_frames": len(results),
+            "avg_generation_time": sum(generation_times)/len(generation_times),
+            "peak_gpu_memory_gb": max_memory_allocated() / 1024**3,
+            "output_path": request.output_path
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# FLUX Lora Pipeline setup and endpoint
+_flux_lora_pipe = None
+
+def get_flux_lora_pipe():
+    """Get or initialize the FLUX Lora pipeline."""
+    global _flux_lora_pipe
+    if _flux_lora_pipe is None:
+        print("Initializing FLUX Lora pipeline...")
+        base_model = "black-forest-labs/FLUX.1-schnell"
+        _flux_lora_pipe = FluxPipeline.from_pretrained(base_model, torch_dtype=torch.bfloat16)
+        
+        print('Loading and fusing lora, please wait...')
+        _flux_lora_pipe.load_lora_weights("./flux_tarot_v1_lora.safetensors")
+        # We need this scaling because SimpleTuner fixes the alpha to 16
+        _flux_lora_pipe.fuse_lora(lora_scale=0.125)
+        _flux_lora_pipe.unload_lora_weights()
+        
+        print('Quantizing, please wait...')
+        quantize(_flux_lora_pipe.transformer, qfloat8)
+        freeze(_flux_lora_pipe.transformer)
+        print('Model quantized!')
+        _flux_lora_pipe.enable_model_cpu_offload()
+    
+    return _flux_lora_pipe
+
+@app.post("/generate-lora")
+async def generate_lora_endpoint(request: FluxLoraRequest):
+    """Generate a single image using FLUX Lora."""
+    try:
+        # Get or initialize the pipeline
+        pipe = get_flux_lora_pipe()
+        
+        # Setup generator with seed if provided
+        if request.seed is not None:
+            generator = torch.Generator().manual_seed(request.seed)
+        else:
+            generator = None
+        
+        # Generate image
+        print(f"Generating image with prompt: {request.prompt[:50]}...")
+        image = pipe(
+            prompt=request.prompt,
+            width=request.width,
+            height=request.height,
+            num_inference_steps=request.num_inference_steps,
+            generator=generator,
+            guidance_scale=request.guidance_scale,
+            timestep_to_start_cfg=request.timestep_to_start_cfg,
+        ).images[0]
+        
+        # Save image to a temporary file
+        output_dir = os.path.join(DATA_DIR, 'files')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate a unique filename
+        timestamp = int(time.time() * 1000)
+        filename = f"flux_lora_{timestamp}.png"
+        filepath = os.path.join(output_dir, filename)
+        
+        # Save the image
+        image.save(filepath)
+        
+        return {
+            "status": "success",
+            "filename": filename,
+            "filepath": filepath
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Add Claude client initialization
 def get_claude_client():
